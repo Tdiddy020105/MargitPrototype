@@ -209,6 +209,38 @@ function refusesNamedGame(value, game) {
   return new RegExp(`${name} is te (moeilijk|lastig)`).test(value);
 }
 
+const LEAD_ORDER = ["zoek", "letter", "memory"];
+
+const LEAD_LINE = {
+  zoek: "We doen woordzoeker.",
+  letter: "We doen één letter anders.",
+  memory: "We doen memory."
+};
+
+export const SPELL_WORDS = ["kat", "zon", "vis", "boom"];
+
+export function spellingIsRight(target, attempt) {
+  const wanted = foldActivity(target);
+  const given = foldActivity(attempt);
+  return Boolean(wanted) && wanted === given;
+}
+
+export function spellPraise(word) {
+  return `Ja! Spel het woord ${word}.`;
+}
+
+// She picks the next game herself. Skip the one already open.
+export function leadGame(current, step = 0) {
+  const choices = LEAD_ORDER.filter((name) => name !== current);
+  const list = choices.length ? choices : LEAD_ORDER;
+  const index = ((step % list.length) + list.length) % list.length;
+  return list[index];
+}
+
+export function gameLeadLine(name) {
+  return LEAD_LINE[name] || LEAD_LINE.zoek;
+}
+
 // She leads. One named game opens that game. A list is not a menu.
 // "Ik pak de kaartjes" does nothing until she names woordzoeker, één letter anders, or memory.
 export function activityFromText(text) {

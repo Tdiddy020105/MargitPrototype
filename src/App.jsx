@@ -12,7 +12,15 @@ import {
   visibleReply,
   voiceLangIsDutch
 } from "./speech.js";
-import { activityFromText } from "./games.js";
+import {
+  SPELL_WORDS,
+  activityFromText,
+  gameLeadLine,
+  hearTooHard,
+  leadGame,
+  spellPraise,
+  spellingIsRight
+} from "./games.js";
 import EenLetter from "./games/EenLetter.jsx";
 import MemorySpel from "./games/MemorySpel.jsx";
 import Woordzoeker from "./games/Woordzoeker.jsx";
@@ -208,6 +216,8 @@ export default function App() {
   const gameRef = useRef(null);
   const loadingRef = useRef(false);
   const missesRef = useRef(0);
+  const spellIndex = useRef(0);
+  const leadStep = useRef(0);
   const switchAskRef = useRef(false);
   const offeredRef = useRef(false);
   const childSpokeRef = useRef(false);
@@ -429,6 +439,11 @@ export default function App() {
     childSpokeRef.current = true;
     phaseRef.current = "thinking";
     setMicNote("");
+
+    if (hearTooHard(trimmed)) {
+      leadToGame(trimmed);
+      return;
+    }
 
     if (gameRef.current) {
       phaseRef.current = "idle";
@@ -835,13 +850,41 @@ export default function App() {
     }
   }
 
+  function leadToGame(heard) {
+    const name = leadGame(gameRef.current, leadStep.current);
+    leadStep.current += 1;
+    const line = gameLeadLine(name);
+    const next = [...messagesRef.current];
+    if (heard) next.push({ role: "user", content: heard });
+    next.push({ role: "assistant", content: line });
+    messagesRef.current = next;
+    setMessages(next);
+    openGame(name);
+    speakReply(line, "talking");
+  }
+
   function sendSpelling(e) {
     e.preventDefault();
     const word = spelled.trim();
     if (!word || loading) return;
     stopListening();
     setSpelled("");
-    sendText(word);
+    const target = SPELL_WORDS[spellIndex.current % SPELL_WORDS.length];
+    if (!spellingIsRight(target, word)) {
+      leadToGame(word);
+      return;
+    }
+    spellIndex.current += 1;
+    const nextWord = SPELL_WORDS[spellIndex.current % SPELL_WORDS.length];
+    const line = spellPraise(nextWord);
+    const next = [
+      ...messagesRef.current,
+      { role: "user", content: word },
+      { role: "assistant", content: line }
+    ];
+    messagesRef.current = next;
+    setMessages(next);
+    speakReply(line, "celebrate");
   }
 
   function clearReactionTimer() {
@@ -870,7 +913,13 @@ export default function App() {
     const spoken = line;
     const mode = kind;
 
-    if (kind === "encourage") missesRef.current += 1;
+    if (kind === "encourage") {
+      missesRef.current += 1;
+      if (missesRef.current >= 3) {
+        leadToGame();
+        return;
+      }
+    }
 
     unlockSpeech();
 
@@ -899,6 +948,7 @@ export default function App() {
     endGameMoment();
     missesRef.current = 0;
     switchAskRef.current = false;
+    spellIndex.current = 0;
     gameRef.current = null;
     setPracticeSpell(true);
     setGame(null);

@@ -24,6 +24,10 @@ import {
   makeWordSearch,
   matchesPlaced,
   activityFromText,
+  gameLeadLine,
+  leadGame,
+  spellPraise,
+  spellingIsRight,
   wantsGame
 } from "../src/games.js";
 
@@ -159,6 +163,24 @@ test("the Chrome speech pulse stays off on iPhone", () => {
     }),
     false
   );
+});
+
+test("a wrong spelling makes her name one game", () => {
+  assert.equal(spellingIsRight("kat", "kat"), true);
+  assert.equal(spellingIsRight("kat", "Kat!"), true);
+  assert.equal(spellingIsRight("kat", "ka"), false);
+  assert.equal(leadGame(null, 0), "zoek");
+  assert.equal(leadGame("zoek", 0), "letter");
+  assert.equal(leadGame("letter", 0), "zoek");
+  assert.equal(leadGame("letter", 1), "memory");
+  assert.equal(leadGame("memory", 0), "zoek");
+  for (const name of ["zoek", "letter", "memory"]) {
+    const line = gameLeadLine(name);
+    assert.equal(activityFromText(line), name);
+    assert.equal(line.split(/[.!?]/).filter(Boolean).length, 1);
+  }
+  assert.match(spellPraise("zon"), /Spel het woord zon/);
+  assert.equal(activityFromText(spellPraise("zon")), "spell");
 });
 
 test("she opens one named game, and a card line is not a menu", () => {
