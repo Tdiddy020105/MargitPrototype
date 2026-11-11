@@ -31,7 +31,11 @@ body {
 
 .tablet {
   display: flex;
-  width: min(720px, calc(100vw - 48px), calc((100svh - 48px) * 3 / 4));
+  width: min(
+    720px,
+    calc(100vw - 48px - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px)),
+    calc((100svh - 48px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)) * 3 / 4)
+  );
   aspect-ratio: 3 / 4;
   box-sizing: border-box;
   padding: 20px;

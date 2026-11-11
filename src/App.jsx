@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import "./App.css";
 import MargitFigure from "./MargitFigure.jsx";
+import { DUTCH_VOICE_LINE, pickDutchVoice, voiceLangIsDutch } from "./speech.js";
 import EenLetter from "./games/EenLetter.jsx";
 import MemorySpel from "./games/MemorySpel.jsx";
 import Woordzoeker from "./games/Woordzoeker.jsx";
@@ -77,49 +78,12 @@ function voiceName(voice) {
   return (voice.name || "").toLowerCase();
 }
 
-function voiceLang(voice) {
-  return (voice.lang || "").toLowerCase().replace("_", "-");
-}
-
-function isFemaleVoice(voice) {
-  const name = voiceName(voice);
-
-  if (name.includes("hazel")) return false;
-  if (name.includes("female") || name.includes("vrouw")) return true;
-  if (/\bmale\b/.test(name)) return false;
-
-  const maleNames = [
-    "david", "mark", "george", "james", "richard", "ravi",
-    "frank", "daan", "maarten", "bart", "guy", "ryan", "andrew"
-  ];
-
-  if (maleNames.some((part) => name.includes(part))) return false;
-
-  const femaleNames = [
-    "zira", "aria", "jenny", "sonia", "libby", "colette", "fenna",
-    "hanna", "els", "susan", "heather", "michelle", "natasha",
-    "emma", "linda", "catherine", "ana", "sara", "cora"
-  ];
-
-  if (femaleNames.some((part) => name.includes(part))) return true;
-  if (name.includes("nederlands")) return true;
-
-  return false;
-}
-
 function chooseVoice(voices) {
-  const female = (voices || []).filter(isFemaleVoice);
-  const named = (part) => female.find((voice) => voiceName(voice).includes(part));
-  const dutch = (test) => female.find((voice) => test(voiceLang(voice)));
-
-  return (
-    named("fenna") ||
-    dutch((lang) => lang === "nl-nl") ||
-    dutch((lang) => lang.startsWith("nl")) ||
-    named("zira") ||
-    female[0] ||
-    null
+  const list = voices || [];
+  const fenna = list.find(
+    (voice) => voiceLangIsDutch(voice.lang) && voiceName(voice).includes("fenna")
   );
+  return fenna || pickDutchVoice(list);
 }
 
 function speechSupported() {
@@ -596,7 +560,7 @@ export default function App() {
       const primer = new SpeechSynthesisUtterance(" ");
       primer.volume = 0;
       primer.voice = voice;
-      primer.lang = voice.lang || "nl-NL";
+      primer.lang = "nl-NL";
       window.speechSynthesis.speak(primer);
       speechUnlocked.current = true;
     } catch {
@@ -633,7 +597,7 @@ export default function App() {
       return false;
     }
 
-    utterance.lang = voice.lang || "nl-NL";
+    utterance.lang = "nl-NL";
 
     let started = false;
     let finished = false;
@@ -852,7 +816,7 @@ export default function App() {
               {!speechOk ? (
                 <p className="stem-note">Stem is niet beschikbaar</p>
               ) : voicesReady && !femaleVoice ? (
-                <p className="stem-note">Geen vrouwenstem. Margit praat nu niet.</p>
+                <p className="stem-note">{DUTCH_VOICE_LINE}</p>
               ) : femaleVoice ? (
                 <button
                   type="button"
