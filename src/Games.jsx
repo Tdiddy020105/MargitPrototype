@@ -41,19 +41,36 @@ export function WordSearch({ onSuccess, onMistake, disabled }) {
     return { r: Number(cell.dataset.r), c: Number(cell.dataset.c) };
   }
 
+  function cellAt(event) {
+    const direct = cellFrom(event.target);
+    if (direct) return direct;
+    const stack = document.elementsFromPoint?.(event.clientX, event.clientY) || [];
+    for (const node of stack) {
+      const pos = cellFrom(node);
+      if (pos) return pos;
+    }
+    return null;
+  }
+
   function pointerDown(event) {
-    if (disabled) return;
-    const pos = cellFrom(event.target);
+    if (disabled || event.isPrimary === false) return;
+    if (event.pointerType === "mouse" && event.button !== 0) return;
+    const pos = cellAt(event);
     if (!pos) return;
     event.preventDefault();
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId);
+    } catch {
+      /* the pointer can end before capture */
+    }
     drag.current = pos;
     activeRef.current = [pos];
     setActive([pos]);
   }
 
   function pointerMove(event) {
-    if (!drag.current || disabled) return;
-    const pos = cellFrom(event.target);
+    if (!drag.current || disabled || event.isPrimary === false) return;
+    const pos = cellAt(event);
     if (!pos) return;
     const line = lineFromDrag(drag.current, pos);
     if (!line) return;
@@ -104,6 +121,11 @@ export function WordSearch({ onSuccess, onMistake, disabled }) {
         onPointerDown={pointerDown}
         onPointerMove={pointerMove}
         onPointerUp={pointerUp}
+        onPointerCancel={() => {
+          drag.current = null;
+          activeRef.current = [];
+          setActive([]);
+        }}
       >
         {puzzle.grid.map((row, r) =>
           row.map((letter, c) => {

@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { pickDutchVoice } from "../src/speech.js";
+import {
+  DUTCH_VOICE_LINE,
+  dutchSpeechRequest,
+  needsChromePulse,
+  pickDutchVoice
+} from "../src/speech.js";
 import {
   LETTER_ROUNDS,
   SEARCH_WORDS,
@@ -61,6 +66,54 @@ test("a Dutch female voice is preferred", () => {
     { lang: "nl-NL", name: "Saskia" }
   ]);
   assert.equal(voice.name, "Saskia");
+});
+
+test("speech stays silent without a Dutch voice and keeps nl-NL", () => {
+  const english = { lang: "en-US", name: "Samantha" };
+  const dutchRegion = { lang: "en-NL", name: "Ellen" };
+  assert.equal(pickDutchVoice([english, dutchRegion]), null);
+  assert.equal(dutchSpeechRequest("Hoi", english), null);
+  assert.equal(dutchSpeechRequest("Hoi", null), null);
+
+  const xander = { lang: "nl-NL", name: "Xander" };
+  const flemish = { lang: "nl_BE", name: "Saskia" };
+  assert.equal(pickDutchVoice([xander]).name, "Xander");
+  assert.equal(pickDutchVoice([english, xander, flemish]).name, "Saskia");
+  assert.deepEqual(dutchSpeechRequest("Hoi", xander), {
+    text: "Hoi",
+    lang: "nl-NL",
+    voice: xander,
+    rate: 0.95
+  });
+  assert.match(
+    DUTCH_VOICE_LINE,
+    /Instellingen, Toegankelijkheid, Gesproken inhoud, Stemmen, Nederlands/
+  );
+});
+
+test("the Chrome speech pulse stays off on iPhone", () => {
+  const iphone = {
+    userAgent:
+      "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1",
+    platform: "iPhone",
+    maxTouchPoints: 5
+  };
+  const chrome = {
+    userAgent:
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    platform: "Win32",
+    maxTouchPoints: 0
+  };
+  assert.equal(needsChromePulse(iphone), false);
+  assert.equal(needsChromePulse(chrome), true);
+  assert.equal(
+    needsChromePulse({
+      userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)",
+      platform: "MacIntel",
+      maxTouchPoints: 5
+    }),
+    false
+  );
 });
 
 test("speech cues pick a game, help, or too hard", () => {
