@@ -5,10 +5,12 @@ import { GameChoice, LetterGame, MemoryGame, WordSearch } from "./Games.jsx";
 import { poseForTurn } from "./clips.js";
 import { GAME_NAMES, hearHelp, hearTooHard, missLimit, wantsGame } from "./games.js";
 import {
+  DUTCH_VOICE_LINE,
   MISTAKE_LINES,
   PREPARED,
   canListen,
   listenDutch,
+  pickDutchVoice,
   speakDutch,
   stopSpeaking,
   unlockSpeech
@@ -27,6 +29,7 @@ export default function App() {
   const [spoken, setSpoken] = useState("");
   const [pcOnline, setPcOnline] = useState(null);
   const [note, setNote] = useState("");
+  const [voiceNote, setVoiceNote] = useState("");
 
   const history = useRef([]);
   const misses = useRef(0);
@@ -36,6 +39,19 @@ export default function App() {
   const letterRef = useRef(null);
   const onChild = useRef(() => {});
   const mistakeLine = useRef(0);
+
+  useEffect(() => {
+    const synth = window.speechSynthesis;
+    if (!synth) return undefined;
+    const refresh = () => {
+      const voices = synth.getVoices();
+      if (!voices.length) return;
+      setVoiceNote(pickDutchVoice(voices) ? "" : DUTCH_VOICE_LINE);
+    };
+    refresh();
+    synth.addEventListener("voiceschanged", refresh);
+    return () => synth.removeEventListener("voiceschanged", refresh);
+  }, []);
 
   useEffect(() => {
     let gone = false;
@@ -127,6 +143,10 @@ export default function App() {
     const voiced = await speakDutch(reply);
     if (mine !== turn.current) return;
 
+    if (voiced) setVoiceNote("");
+    else if (!pickDutchVoice(window.speechSynthesis?.getVoices?.() || [])) {
+      setVoiceNote(DUTCH_VOICE_LINE);
+    }
     setVisibleLine(voiced ? "" : reply);
     if (!voiced) {
       await new Promise((resolve) => window.setTimeout(resolve, 900));
@@ -285,7 +305,12 @@ export default function App() {
 
   return (
     <div className="demo">
-      <p className="demo-status">{status}</p>
+      {status && <p className="demo-status">{status}</p>}
+      {voiceNote && (
+        <p className="demo-note" role="status">
+          {voiceNote}
+        </p>
+      )}
       {note && <p className="demo-note">{note}</p>}
       <div className="ipad">
         <div className="screen">

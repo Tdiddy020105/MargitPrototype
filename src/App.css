@@ -1,11 +1,26 @@
+.demo,
+.demo * {
+  box-sizing: border-box;
+}
+
 .demo {
+  width: 100%;
+  max-width: 100%;
   min-height: 100svh;
+  min-height: 100dvh;
+  height: 100svh;
+  height: 100dvh;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 10px;
-  padding: 16px;
+  gap: 8px;
+  overflow: hidden;
+  padding:
+    max(8px, env(safe-area-inset-top, 0px))
+    max(8px, env(safe-area-inset-right, 0px))
+    max(8px, env(safe-area-inset-bottom, 0px))
+    max(8px, env(safe-area-inset-left, 0px));
   background: #e7e1d6;
   color: #1c1915;
   font-family: "Segoe UI", system-ui, sans-serif;
@@ -14,10 +29,14 @@
 .demo-status,
 .demo-note {
   margin: 0;
-  max-width: 420px;
+  width: 100%;
+  min-width: 0;
+  max-width: min(420px, 100%);
+  box-sizing: border-box;
   text-align: center;
-  font-size: 13px;
-  line-height: 1.4;
+  font-size: 15px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
   color: #5c564c;
 }
 
@@ -26,30 +45,43 @@
 }
 
 .ipad {
-  width: min(400px, 100%);
-  height: min(800px, calc(100svh - 132px));
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 400px;
+  min-width: 0;
+  flex: 0 1 800px;
+  min-height: 0;
+  display: flex;
   background: #1b1b1b;
-  border-radius: 36px;
-  padding: 14px;
+  border-radius: 28px;
+  padding: 10px;
   box-shadow: 0 18px 40px rgba(40, 32, 20, 0.28);
+  overflow: hidden;
 }
 
 .screen {
-  height: 100%;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 auto;
   background: #f7f1e6;
-  border-radius: 24px;
+  border-radius: 20px;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 8px;
-  padding: 8px 12px 12px;
-  overflow: auto;
+  padding: 8px 10px 10px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .avatar {
   position: relative;
-  width: min(280px, 86%);
-  height: 300px;
+  width: min(280px, 100%);
+  height: 220px;
+  height: min(300px, 30dvh);
   flex: 0 0 auto;
 }
 
@@ -77,8 +109,10 @@
 
 .choices,
 .game,
-.talk {
+.talk,
+.keys {
   width: 100%;
+  min-width: 0;
 }
 
 .choices {
@@ -91,19 +125,36 @@
 .begin,
 .talk button,
 .keys button,
-.card {
+.card,
+.cell {
   font: inherit;
   color: #1c1915;
   background: #fff;
   border: 1px solid #d9d0c2;
   border-radius: 12px;
+  appearance: none;
+  -webkit-appearance: none;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .choices button,
 .begin {
   min-height: 52px;
+  min-width: 44px;
   font-size: 20px;
   letter-spacing: 0.01em;
+}
+
+.choices button:active,
+.talk button:active,
+.keys button:active,
+.cell:active {
+  background: #efe8dc;
+}
+
+.begin:active {
+  background: #275e5a;
 }
 
 .begin {
@@ -146,22 +197,31 @@
 
 .grid {
   display: grid;
-  grid-template-columns: repeat(8, 1fr);
-  gap: 3px;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  gap: 2px;
   width: 100%;
   touch-action: none;
   user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 
 .cell {
-  height: 32px;
+  aspect-ratio: 1;
+  width: 100%;
+  height: auto;
+  min-width: 0;
+  min-height: 0;
   font: inherit;
-  font-size: 15px;
+  font-size: 16px;
   padding: 0;
   border: none;
   border-radius: 6px;
   background: #fff;
   color: #1c1915;
+  touch-action: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 
 .cell.on {
@@ -181,7 +241,6 @@
 }
 
 .keys {
-  width: 100%;
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -189,15 +248,18 @@
 
 .key-row {
   display: flex;
+  width: 100%;
   justify-content: center;
-  gap: 4px;
+  gap: 3px;
 }
 
 .keys button {
-  min-width: 28px;
-  min-height: 36px;
-  padding: 4px 6px;
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 44px;
+  padding: 4px 0;
   border-radius: 8px;
+  font-size: 16px;
 }
 
 .memory {
@@ -208,10 +270,15 @@
 
 .card {
   min-height: 84px;
+  min-width: 44px;
   font-size: 22px;
   letter-spacing: 0.04em;
   background: #2f6f6a;
   color: transparent;
+}
+
+.card:active {
+  background: #275e5a;
 }
 
 .card.open {
@@ -228,21 +295,25 @@
 .talk button,
 .talk input {
   font: inherit;
+  font-size: 16px;
   min-height: 44px;
+  min-width: 44px;
 }
 
 .talk button {
-  padding: 0 12px;
+  flex: 0 0 auto;
+  padding: 0 14px;
 }
 
 .talk input {
-  flex: 1;
+  flex: 1 1 auto;
   min-width: 0;
   border: 1px solid #d9d0c2;
   border-radius: 12px;
   padding: 0 10px;
   background: #fff;
   color: #1c1915;
+  touch-action: manipulation;
 }
 
 .visible-line {
