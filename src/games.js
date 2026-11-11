@@ -196,36 +196,28 @@ function lineAsksToSpell(text) {
   return false;
 }
 
-// One named activity starts that game. Several names are a choice.
-// "Ik pak de kaartjes" is memory. A spelling line opens the keyboard.
+function namedGames(value) {
+  const found = [];
+  if (value.includes("woordzoeker") || value.includes("woord zoeker")) found.push("zoek");
+  if (value.includes("letter anders") || value.includes("andere letter")) found.push("letter");
+  if (/\bmemory\b/.test(value)) found.push("memory");
+  return found;
+}
+
+function refusesNamedGame(value, game) {
+  const name = game === "zoek" ? "woordzoeker" : game === "memory" ? "memory" : "letter anders";
+  return new RegExp(`${name} is te (moeilijk|lastig)`).test(value);
+}
+
+// She leads. One named game opens that game. A list is not a menu.
+// "Ik pak de kaartjes" does nothing until she names woordzoeker, één letter anders, or memory.
 export function activityFromText(text) {
   const value = foldActivity(text);
   if (!value) return null;
-  if (/te moeilijk|te lastig|kan dit niet/.test(value)) return null;
 
-  const found = [];
-  if (value.includes("woordzoeker") || value.includes("woord zoeker")) found.push("zoek");
-  if (
-    value.includes("letter anders")
-    || value.includes("een letter")
-    || value.includes("1 letter")
-    || value.includes("andere letter")
-  ) found.push("letter");
-  if (
-    value.includes("memory")
-    || value.includes("geheugen")
-    || /\bkaartjes?\b/.test(value)
-    || /\bkaarten\b/.test(value)
-    || /\bkaart\b/.test(value)
-  ) found.push("memory");
-
-  if (found.length > 1) return "choice";
-  const looseLetter = found.length === 1
-    && found[0] === "letter"
-    && !value.includes("letter anders")
-    && !value.includes("andere letter");
-  if (looseLetter && lineAsksToSpell(text)) return "spell";
-  if (found.length === 1) return found[0];
+  const found = namedGames(value);
+  if (found.length === 1 && !refusesNamedGame(value, found[0])) return found[0];
+  if (found.length > 0) return null;
   if (lineAsksToSpell(text)) return "spell";
   return null;
 }

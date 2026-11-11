@@ -338,17 +338,6 @@ form button {
   color: #5c564e;
 }
 
-.choices {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin: 0 0 8px;
-}
-
-.choices .starter {
-  width: 100%;
-}
-
 .spell {
   display: flex;
   flex-direction: column;
@@ -833,8 +822,7 @@ form button:disabled:hover {
   }
 
   .key,
-  .spell-send,
-  .choices .starter {
+  .spell-send {
     min-height: 40px;
   }
 

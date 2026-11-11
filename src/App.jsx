@@ -149,8 +149,7 @@ function SpellPad({ value, disabled, onType, onErase, onSend }) {
   );
 }
 
-const OFFER = "Wat wil je doen? We kunnen woordzoeker, één letter anders, of memory spelen.";
-const SWITCH_LINE = "Wil je een ander spel? Zeg woordzoeker, één letter anders, of memory.";
+const START_SPELL = "Spel het woord kat.";
 
 function recognitionSupported() {
   return (
@@ -183,7 +182,7 @@ export default function App() {
   const [messages, setMessages] = useState([
     {
       role: "assistant",
-      content: OFFER
+      content: START_SPELL
     }
   ]);
   const [loading, setLoading] = useState(false);
@@ -193,7 +192,7 @@ export default function App() {
   const [voicesReady, setVoicesReady] = useState(false);
   const [femaleVoice, setFemaleVoice] = useState(false);
   const [game, setGame] = useState(null);
-  const [practiceSpell, setPracticeSpell] = useState(false);
+  const [practiceSpell, setPracticeSpell] = useState(true);
   const [hearing, setHearing] = useState(false);
   const [micNote, setMicNote] = useState("");
   const [spelled, setSpelled] = useState("");
@@ -219,15 +218,15 @@ export default function App() {
   const pendingSpeak = useRef(null);
   const speakReplyRef = useRef(() => false);
   const replyEpoch = useRef(0);
+  const openingSpoken = useRef(false);
+  const ensureOpeningRef = useRef(() => {});
   const messagesRef = useRef(messages);
   const speechOk = speechSupported();
   const canListen = recognitionSupported();
 
   const latestReply = [...messages].reverse().find((message) => message.role === "assistant");
   const heardLine = [...messages].reverse().find((message) => message.role === "user");
-  const replyActivity = !game && latestReply ? activityFromText(latestReply.content) : null;
-  const spelling = Boolean(!game && (practiceSpell || replyActivity === "spell"));
-  const choosing = Boolean(!game && !spelling && replyActivity === "choice");
+  const spelling = Boolean(!game && practiceSpell);
   gameRef.current = game;
   loadingRef.current = loading;
   messagesRef.current = messages;
@@ -279,6 +278,7 @@ export default function App() {
     };
 
     loadVoices(false);
+    if (!isAppleMobile()) ensureOpeningRef.current();
     const onVoices = () => loadVoices(true);
     synth.addEventListener("voiceschanged", onVoices);
     const giveUp = setTimeout(() => loadVoices(true), 1200);
@@ -298,6 +298,12 @@ export default function App() {
       synth.cancel();
     };
   }, [speechOk]);
+
+  useEffect(() => {
+    const arm = () => ensureOpeningRef.current();
+    window.addEventListener("pointerdown", arm, true);
+    return () => window.removeEventListener("pointerdown", arm, true);
+  }, []);
 
   function haltRecognition() {
     listenId.current += 1;
@@ -407,7 +413,7 @@ export default function App() {
     if (!childSpokeRef.current && !offeredRef.current && !gameRef.current) {
       offeredRef.current = true;
       setMicNote("");
-      askThenListen(OFFER);
+      askThenListen(START_SPELL);
       return;
     }
     if (!echo) setMicNote("Ik hoorde niets. Probeer nog eens.");
@@ -424,17 +430,8 @@ export default function App() {
     phaseRef.current = "thinking";
     setMicNote("");
 
-    const chosen = activityFromText(trimmed);
-    if (chosen === "zoek" || chosen === "letter" || chosen === "memory") {
-      openGame(chosen);
-      return;
-    }
-    if (chosen === "spell") setPracticeSpell(true);
-
-    if (gameRef.current || switchAskRef.current) {
-      switchAskRef.current = false;
+    if (gameRef.current) {
       phaseRef.current = "idle";
-      setMicNote("Zeg woordzoeker, één letter anders, of memory.");
       return;
     }
 
@@ -724,6 +721,16 @@ export default function App() {
   }
 
   speakReplyRef.current = speakReply;
+  ensureOpeningRef.current = () => {
+    if (openingSpoken.current || gameRef.current || mutedRef.current) return;
+    if (speakReply(START_SPELL, "talking")) {
+      openingSpoken.current = true;
+      return;
+    }
+    if (pendingSpeak.current && pendingSpeak.current.text === START_SPELL) {
+      openingSpoken.current = true;
+    }
+  };
 
   function toggleMute() {
     const next = !mutedRef.current;
@@ -783,11 +790,7 @@ export default function App() {
       messagesRef.current = next;
       setMessages(next);
 
-      const childPlay = activityFromText(trimmed);
-      const replyPlay = activityFromText(reply);
-      const play = childPlay === "zoek" || childPlay === "letter" || childPlay === "memory" || childPlay === "spell"
-        ? childPlay
-        : replyPlay;
+      const play = activityFromText(reply);
       if (play === "zoek" || play === "letter" || play === "memory") {
         clearListenWait();
         haltRecognition();
@@ -797,8 +800,6 @@ export default function App() {
         setPracticeSpell(false);
         gameRef.current = play;
         setGame(play);
-      } else if (play === "spell") {
-        setPracticeSpell(true);
       }
 
       const again = () => {
@@ -866,30 +867,16 @@ export default function App() {
 
     if (kind === "celebrate") missesRef.current = 0;
 
-    let spoken = line;
-    let mode = kind;
-    let follow = null;
+    const spoken = line;
+    const mode = kind;
 
-    if (kind === "encourage") {
-      missesRef.current += 1;
-      if (missesRef.current >= 3) {
-        missesRef.current = 0;
-        switchAskRef.current = true;
-        spoken = SWITCH_LINE;
-        mode = "talking";
-        follow = () => {
-          if (!listensAfterReply()) return;
-          if (gameRef.current && switchAskRef.current) beginListen();
-        };
-      }
-    }
+    if (kind === "encourage") missesRef.current += 1;
 
     unlockSpeech();
 
-    if (speakReply(spoken, mode, follow || undefined)) return;
+    if (speakReply(spoken, mode)) return;
 
     setMicNote(spoken);
-    if (follow) follow();
     setAvatarMode(mode);
     reactionTimer.current = setTimeout(() => {
       reactionTimer.current = null;
@@ -913,10 +900,13 @@ export default function App() {
     missesRef.current = 0;
     switchAskRef.current = false;
     gameRef.current = null;
-    setPracticeSpell(false);
+    setPracticeSpell(true);
     setGame(null);
-    offeredRef.current = true;
-    askThenListen(OFFER);
+    const next = [...messagesRef.current, { role: "assistant", content: START_SPELL }];
+    messagesRef.current = next;
+    setMessages(next);
+    openingSpoken.current = false;
+    ensureOpeningRef.current();
   }
 
   return (
@@ -959,19 +949,6 @@ export default function App() {
               onErase={() => setSpelled((current) => current.slice(0, -1))}
               onSend={sendSpelling}
             />
-          )}
-          {choosing && (
-            <div className="choices">
-              <button type="button" className="starter" onClick={() => openGame("zoek")}>
-                Woordzoeker
-              </button>
-              <button type="button" className="starter" onClick={() => openGame("letter")}>
-                Eén letter anders
-              </button>
-              <button type="button" className="starter" onClick={() => openGame("memory")}>
-                Memory
-              </button>
-            </div>
           )}
 
           <div className="converse">
