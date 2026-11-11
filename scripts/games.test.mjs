@@ -26,8 +26,12 @@ import {
   activityFromText,
   gameLeadLine,
   leadGame,
+  OPENING_LINE,
   spellPraise,
+  spellPrompt,
+  spellTargetFrom,
   spellingIsRight,
+  showsSpellPad,
   wantsGame
 } from "../src/games.js";
 
@@ -163,6 +167,16 @@ test("the Chrome speech pulse stays off on iPhone", () => {
     }),
     false
   );
+});
+
+test("the keyboard waits until she asks him to spell", () => {
+  assert.equal(showsSpellPad(OPENING_LINE, null), false);
+  assert.equal(activityFromText(OPENING_LINE), null);
+  assert.equal(showsSpellPad(spellPrompt("kat"), null), true);
+  assert.equal(showsSpellPad(spellPrompt("kat"), "memory"), false);
+  assert.equal(showsSpellPad("We doen woordzoeker.", null), false);
+  assert.equal(spellTargetFrom(spellPrompt("kat")), "kat");
+  assert.equal(spellTargetFrom(OPENING_LINE), null);
 });
 
 test("a wrong spelling makes her name one game", () => {

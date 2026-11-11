@@ -13,13 +13,17 @@ import {
   voiceLangIsDutch
 } from "./speech.js";
 import {
+  OPENING_LINE,
   SPELL_WORDS,
   activityFromText,
   gameLeadLine,
   hearTooHard,
   leadGame,
   spellPraise,
-  spellingIsRight
+  spellPrompt,
+  spellTargetFrom,
+  spellingIsRight,
+  showsSpellPad
 } from "./games.js";
 import EenLetter from "./games/EenLetter.jsx";
 import MemorySpel from "./games/MemorySpel.jsx";
@@ -157,7 +161,7 @@ function SpellPad({ value, disabled, onType, onErase, onSend }) {
   );
 }
 
-const START_SPELL = "Spel het woord kat.";
+const START_TALK = OPENING_LINE;
 
 function recognitionSupported() {
   return (
@@ -190,7 +194,7 @@ export default function App() {
   const [messages, setMessages] = useState([
     {
       role: "assistant",
-      content: START_SPELL
+      content: START_TALK
     }
   ]);
   const [loading, setLoading] = useState(false);
@@ -200,7 +204,6 @@ export default function App() {
   const [voicesReady, setVoicesReady] = useState(false);
   const [femaleVoice, setFemaleVoice] = useState(false);
   const [game, setGame] = useState(null);
-  const [practiceSpell, setPracticeSpell] = useState(true);
   const [hearing, setHearing] = useState(false);
   const [micNote, setMicNote] = useState("");
   const [spelled, setSpelled] = useState("");
@@ -217,9 +220,9 @@ export default function App() {
   const loadingRef = useRef(false);
   const missesRef = useRef(0);
   const spellIndex = useRef(0);
+  const spellAsked = useRef(false);
   const leadStep = useRef(0);
   const switchAskRef = useRef(false);
-  const offeredRef = useRef(false);
   const childSpokeRef = useRef(false);
   const hearingRef = useRef(false);
   const phaseRef = useRef("idle");
@@ -236,7 +239,7 @@ export default function App() {
 
   const latestReply = [...messages].reverse().find((message) => message.role === "assistant");
   const heardLine = [...messages].reverse().find((message) => message.role === "user");
-  const spelling = Boolean(!game && practiceSpell);
+  const spelling = showsSpellPad(latestReply && latestReply.content, game);
   gameRef.current = game;
   loadingRef.current = loading;
   messagesRef.current = messages;
@@ -420,10 +423,9 @@ export default function App() {
       if (!echo) setMicNote("Ik hoorde niets. Probeer nog eens.");
       return;
     }
-    if (!childSpokeRef.current && !offeredRef.current && !gameRef.current) {
-      offeredRef.current = true;
+    if (!childSpokeRef.current && !spellAsked.current && !gameRef.current) {
       setMicNote("");
-      askThenListen(START_SPELL);
+      askToSpell();
       return;
     }
     if (!echo) setMicNote("Ik hoorde niets. Probeer nog eens.");
@@ -578,23 +580,6 @@ export default function App() {
     }
   }
 
-  function askThenListen(line) {
-    clearListenWait();
-    stopListening();
-    speechUnlocked.current = true;
-    phaseRef.current = "speaking";
-    const follow = () => {
-      if (!listensAfterReply()) return;
-      if (phaseRef.current === "listening") return;
-      beginListen();
-    };
-    const spoke = speakReply(line, "talking", follow);
-    if (!spoke) {
-      phaseRef.current = "idle";
-      follow();
-    }
-  }
-
   function onMic() {
     const text = heardDraft.current.trim();
     const busy = hearingRef.current || phaseRef.current === "listening";
@@ -736,15 +721,46 @@ export default function App() {
   }
 
   speakReplyRef.current = speakReply;
+  function askToSpell() {
+    if (spellAsked.current || gameRef.current) return;
+    spellAsked.current = true;
+    const word = SPELL_WORDS[spellIndex.current % SPELL_WORDS.length];
+    const line = spellPrompt(word);
+    const next = [...messagesRef.current, { role: "assistant", content: line }];
+    messagesRef.current = next;
+    setMessages(next);
+    const follow = () => {
+      if (!listensAfterReply()) return;
+      if (phaseRef.current === "listening") return;
+      if (gameRef.current) return;
+      beginListen();
+    };
+    if (!speakReply(line, "talking", follow)) follow();
+  }
+
   ensureOpeningRef.current = () => {
-    if (openingSpoken.current || gameRef.current || mutedRef.current) return;
-    if (speakReply(START_SPELL, "talking")) {
+    if (openingSpoken.current || gameRef.current || mutedRef.current || spellAsked.current) return;
+    const follow = () => {
+      if (mutedRef.current || gameRef.current) return;
+      askToSpell();
+    };
+    if (speakReply(START_TALK, "talking", follow)) {
       openingSpoken.current = true;
       return;
     }
-    if (pendingSpeak.current && pendingSpeak.current.text === START_SPELL) {
+    if (pendingSpeak.current && pendingSpeak.current.text === START_TALK) {
       openingSpoken.current = true;
+      window.setTimeout(() => {
+        if (spellAsked.current || gameRef.current) return;
+        if (pendingSpeak.current && pendingSpeak.current.text === START_TALK) {
+          pendingSpeak.current = null;
+          askToSpell();
+        }
+      }, 1600);
+      return;
     }
+    openingSpoken.current = true;
+    window.setTimeout(follow, 900);
   };
 
   function toggleMute() {
@@ -754,7 +770,9 @@ export default function App() {
     if (next) {
       pendingSpeak.current = null;
       stopSpeaking();
+      return;
     }
+    ensureOpeningRef.current();
   }
 
   async function sendText(text) {
@@ -812,9 +830,11 @@ export default function App() {
         markHearing(false);
         missesRef.current = 0;
         switchAskRef.current = false;
-        setPracticeSpell(false);
+        spellAsked.current = true;
         gameRef.current = play;
         setGame(play);
+      } else if (asksToSpell(reply)) {
+        spellAsked.current = true;
       }
 
       const again = () => {
@@ -828,17 +848,25 @@ export default function App() {
         beginListen();
       };
 
+      const follow = () => {
+        if (gameRef.current || asksToSpell(reply) || spellAsked.current) {
+          again();
+          return;
+        }
+        askToSpell();
+      };
+
       try {
         const spoken = spokenText(reply);
         phaseRef.current = "speaking";
-        if (spoken && speakReply(spoken, replyMood(reply), again, epoch)) return;
+        if (spoken && speakReply(spoken, replyMood(reply), follow, epoch)) return;
         stopSpeaking();
         phaseRef.current = "idle";
-        again();
+        follow();
       } catch {
         stopSpeaking();
         phaseRef.current = "idle";
-        again();
+        follow();
       }
     } catch (err) {
       phaseRef.current = "idle";
@@ -869,7 +897,10 @@ export default function App() {
     if (!word || loading) return;
     stopListening();
     setSpelled("");
-    const target = SPELL_WORDS[spellIndex.current % SPELL_WORDS.length];
+    const asked = [...messagesRef.current].reverse().find((message) => message.role === "assistant");
+    const target =
+      spellTargetFrom(asked && asked.content) ||
+      SPELL_WORDS[spellIndex.current % SPELL_WORDS.length];
     if (!spellingIsRight(target, word)) {
       leadToGame(word);
       return;
@@ -939,7 +970,6 @@ export default function App() {
     missesRef.current = 0;
     switchAskRef.current = false;
     gameRef.current = name;
-    setPracticeSpell(false);
     setGame(name);
   }
 
@@ -949,10 +979,10 @@ export default function App() {
     missesRef.current = 0;
     switchAskRef.current = false;
     spellIndex.current = 0;
+    spellAsked.current = false;
     gameRef.current = null;
-    setPracticeSpell(true);
     setGame(null);
-    const next = [...messagesRef.current, { role: "assistant", content: START_SPELL }];
+    const next = [...messagesRef.current, { role: "assistant", content: START_TALK }];
     messagesRef.current = next;
     setMessages(next);
     openingSpoken.current = false;

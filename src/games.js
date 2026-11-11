@@ -219,6 +219,26 @@ const LEAD_LINE = {
 
 export const SPELL_WORDS = ["kat", "zon", "vis", "boom"];
 
+export const OPENING_LINE = "Hoi! Ik ben Margit.";
+
+export function spellPrompt(word) {
+  return `Spel het woord ${word}.`;
+}
+
+export function spellTargetFrom(text) {
+  const value = foldActivity(text);
+  const match = value.match(/\bwoord\s+([a-z]{2,})\b/);
+  if (!match) return null;
+  const word = match[1];
+  if (word === "zoeken" || word === "zoeker" || word === "spel") return null;
+  return word;
+}
+
+// The keyboard is only there while her latest line asks him to spell.
+export function showsSpellPad(line, game) {
+  return !game && activityFromText(line) === "spell";
+}
+
 export function spellingIsRight(target, attempt) {
   const wanted = foldActivity(target);
   const given = foldActivity(attempt);
