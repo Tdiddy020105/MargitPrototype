@@ -9,6 +9,9 @@ lerna-debug.log*
 
 node_modules
 dist
+
+# Rigged avatar stays on the PC. The dev server serves this file to the laptop.
+public/models/*.glb
 dist-ssr
 *.local
 
