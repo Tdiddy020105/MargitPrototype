@@ -47,128 +47,32 @@
 }
 
 .avatar {
-  width: min(168px, 52%);
+  position: relative;
+  width: min(280px, 86%);
+  height: 300px;
   flex: 0 0 auto;
 }
 
-.avatar.listening {
-  border-radius: 40px;
-  box-shadow: 0 0 0 4px #cfe3df;
-}
-
-.figure {
+.avatar canvas {
   width: 100%;
-  height: auto;
+  height: 100%;
   display: block;
 }
 
-.arm {
-  transform-box: fill-box;
-  transform-origin: center top;
+.avatar.listening {
+  border-radius: 24px;
+  box-shadow: 0 0 0 4px #cfe3df;
 }
 
-.pose-idle .arm-left {
-  transform: rotate(8deg);
-}
-
-.pose-idle .arm-right {
-  transform: rotate(-8deg);
-}
-
-.pose-wave .arm-right {
-  transform: rotate(-130deg);
-}
-
-.pose-talk .arm-left {
-  transform: rotate(58deg);
-}
-
-.pose-talk .arm-right {
-  transform: rotate(-58deg);
-}
-
-.pose-cheer .arm-left {
-  transform: rotate(145deg);
-}
-
-.pose-cheer .arm-right {
-  transform: rotate(-145deg);
-}
-
-.mouth-cheer {
-  display: none;
-}
-
-.pose-cheer .mouth-calm {
-  display: none;
-}
-
-.pose-cheer .mouth-cheer {
-  display: inline;
-}
-
-@media (prefers-reduced-motion: no-preference) {
-  .pose-idle .figure-body {
-    animation: breathe 3.4s ease-in-out infinite;
-  }
-
-  .pose-wave .arm-right {
-    animation: wave-arm 1.15s ease-in-out infinite;
-  }
-
-  .pose-talk .arm-left {
-    animation: talk-left 0.7s ease-in-out infinite;
-  }
-
-  .pose-talk .arm-right {
-    animation: talk-right 0.7s ease-in-out infinite;
-  }
-
-  .pose-cheer .figure-body {
-    animation: cheer-bounce 0.55s ease-in-out 2;
-  }
-}
-
-@keyframes breathe {
-  50% {
-    transform: translateY(2px);
-  }
-}
-
-@keyframes wave-arm {
-  0%,
-  100% {
-    transform: rotate(-70deg);
-  }
-  50% {
-    transform: rotate(-145deg);
-  }
-}
-
-@keyframes talk-left {
-  0%,
-  100% {
-    transform: rotate(42deg);
-  }
-  50% {
-    transform: rotate(78deg);
-  }
-}
-
-@keyframes talk-right {
-  0%,
-  100% {
-    transform: rotate(-42deg);
-  }
-  50% {
-    transform: rotate(-78deg);
-  }
-}
-
-@keyframes cheer-bounce {
-  50% {
-    transform: translateY(-8px);
-  }
+.model-missing {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 8px;
+  margin: 0;
+  text-align: center;
+  font-size: 14px;
+  line-height: 1.35;
 }
 
 .choices,

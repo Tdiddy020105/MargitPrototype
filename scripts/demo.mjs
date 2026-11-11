@@ -1,31 +1,62 @@
 import { spawn } from "node:child_process";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-const raw = process.argv[2];
-
-if (!raw) {
-  console.error("Gebruik: npm run demo -- <ip-van-de-pc>");
-  console.error("Voorbeeld: npm run demo -- 192.168.1.42");
-  process.exit(1);
-}
-
-function apiBase(value) {
-  if (/^https?:\/\//.test(value)) return value.replace(/\/$/, "");
-  if (value.includes(":")) return `http://${value}`.replace(/\/$/, "");
-  return `http://${value}:3001`;
-}
-
-const api = apiBase(raw);
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const viteBin = path.join(root, "node_modules", "vite", "bin", "vite.js");
 
-console.log(`Laptop-demo. Margit denkt op ${api}`);
+function lanAddresses() {
+  const addresses = [];
+  for (const list of Object.values(os.networkInterfaces())) {
+    for (const net of list || []) {
+      if ((net.family === "IPv4" || net.family === 4) && !net.internal) {
+        addresses.push(net.address);
+      }
+    }
+  }
+  return addresses;
+}
 
-const child = spawn(process.execPath, [viteBin, "--host", "127.0.0.1", "--port", "5173"], {
+const server = spawn(process.execPath, ["server.cjs"], {
   cwd: root,
-  stdio: "inherit",
-  env: { ...process.env, MARGIT_API: api }
+  stdio: "inherit"
+});
+const vite = spawn(process.execPath, [viteBin], {
+  cwd: root,
+  stdio: "inherit"
 });
 
-child.on("exit", (code) => process.exit(code ?? 0));
+const addresses = lanAddresses();
+console.log("Op de laptop, zelfde netwerk, alleen de browser:");
+if (addresses.length) {
+  for (const address of addresses) console.log(`http://${address}:5173`);
+} else {
+  console.log("http://<ip-van-deze-pc>:5173");
+}
+console.log("Zet poort 5173 open in de firewall van deze PC.");
+
+function stop() {
+  server.kill();
+  vite.kill();
+}
+
+process.on("SIGINT", () => {
+  stop();
+  process.exit(0);
+});
+process.on("SIGTERM", () => {
+  stop();
+  process.exit(0);
+});
+
+server.on("exit", (code) => {
+  if (code) {
+    vite.kill();
+    process.exit(code);
+  }
+});
+vite.on("exit", (code) => {
+  server.kill();
+  process.exit(code ?? 0);
+});

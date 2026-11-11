@@ -246,10 +246,8 @@ export default function App() {
 
   const status =
     pcOnline === false
-      ? "2D-beeld op deze laptop. De PC reageert niet, dus dit is een voorbereide zin."
-      : pcOnline
-        ? "2D-beeld op deze laptop. De PC denkt mee."
-        : "2D-beeld op deze laptop.";
+      ? "Ollama op deze PC reageert niet. Margit zegt een voorbereide zin."
+      : "";
 
   let boardView = null;
   if (!started) {

@@ -154,13 +154,9 @@ const server = app.listen(PORT, host, () => {
   }
 
   const addresses = lanAddresses();
-  console.log(`Margit-server voor de laptop op poort ${PORT}. Ollama blijft op deze PC.`);
-  if (!addresses.length) {
-    console.log(`Op de laptop: npm run demo -- <ip-van-deze-pc>`);
-    return;
-  }
+  console.log(`Margit-API op poort ${PORT}. Ollama blijft op deze PC.`);
   for (const address of addresses) {
-    console.log(`Op de laptop: npm run demo -- ${address}`);
+    console.log(`http://${address}:${PORT}`);
   }
 });
 
