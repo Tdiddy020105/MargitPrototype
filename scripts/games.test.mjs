@@ -1,10 +1,16 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  CHAT_TIMEOUT_MS,
   DUTCH_VOICE_LINE,
+  calmChatError,
   dutchSpeechRequest,
+  isAppleMobile,
+  listensAfterReply,
   needsChromePulse,
-  pickDutchVoice
+  pickDutchVoice,
+  recognitionSettings,
+  visibleReply
 } from "../src/speech.js";
 import {
   LETTER_ROUNDS,
@@ -89,6 +95,44 @@ test("speech stays silent without a Dutch voice and keeps nl-NL", () => {
     DUTCH_VOICE_LINE,
     /Instellingen, Toegankelijkheid, Gesproken inhoud, Stemmen, Nederlands/
   );
+});
+
+test("iPhone listens once per tap and still shows a reply", () => {
+  const iphone = {
+    userAgent:
+      "Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/604.1",
+    platform: "iPhone",
+    maxTouchPoints: 5
+  };
+  assert.equal(isAppleMobile(iphone), true);
+  assert.deepEqual(recognitionSettings(iphone), {
+    continuous: false,
+    interimResults: false
+  });
+  assert.equal(listensAfterReply(iphone), false);
+  assert.equal(needsChromePulse(iphone), false);
+  assert.equal(listensAfterReply({
+    userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0",
+    platform: "Win32",
+    maxTouchPoints: 0
+  }), true);
+  assert.deepEqual(recognitionSettings({
+    userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0",
+    platform: "Win32",
+    maxTouchPoints: 0
+  }), { continuous: true, interimResults: true });
+  assert.equal(visibleReply(""), "Ik ben er. Zeg het nog eens.");
+  assert.equal(visibleReply("  Hoi *daar*  "), "Hoi daar");
+  assert.equal(
+    calmChatError({ name: "TimeoutError", message: "The operation was aborted." }),
+    "Margit kan nu niet antwoorden. Probeer het zo nog eens."
+  );
+  assert.equal(
+    calmChatError({ name: "AbortError", message: "The user aborted a request." }),
+    "Margit kan nu niet antwoorden. Probeer het zo nog eens."
+  );
+  assert.equal(calmChatError(new Error("Berichten ontbreken.")), "Berichten ontbreken.");
+  assert.ok(CHAT_TIMEOUT_MS >= 1000);
 });
 
 test("the Chrome speech pulse stays off on iPhone", () => {

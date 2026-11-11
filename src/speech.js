@@ -42,12 +42,52 @@ export function dutchSpeechRequest(text, voice) {
   return { text, lang: "nl-NL", voice, rate: 0.95 };
 }
 
+export function isAppleMobile(nav = globalThis.navigator) {
+  if (!nav) return false;
+  const ua = String(nav.userAgent || "");
+  if (/iPhone|iPad|iPod/i.test(ua)) return true;
+  if (nav.platform === "MacIntel" && Number(nav.maxTouchPoints) > 1) return true;
+  return false;
+}
+
 export function needsChromePulse(nav = globalThis.navigator) {
   if (!nav) return true;
-  const ua = String(nav.userAgent || "");
-  if (/iPhone|iPad|iPod/i.test(ua)) return false;
-  if (nav.platform === "MacIntel" && Number(nav.maxTouchPoints) > 1) return false;
-  return true;
+  return !isAppleMobile(nav);
+}
+
+// iOS ends a continuous session with no result and never fires onend.
+export function recognitionSettings(nav = globalThis.navigator) {
+  if (isAppleMobile(nav)) return { continuous: false, interimResults: false };
+  return { continuous: true, interimResults: true };
+}
+
+// Starting another listen after the reply is outside the tap, so iOS drops it.
+export function listensAfterReply(nav = globalThis.navigator) {
+  return !isAppleMobile(nav);
+}
+
+export const CHAT_TIMEOUT_MS = 45000;
+
+export function calmChatError(err) {
+  const message = String((err && err.message) || "");
+  const name = String((err && err.name) || "");
+  if (
+    name === "TimeoutError" ||
+    name === "AbortError" ||
+    /abort|timeout|timed out|fetch|network|json|ollama|failed|unexpected|load failed/i.test(message)
+  ) {
+    return "Margit kan nu niet antwoorden. Probeer het zo nog eens.";
+  }
+  if (message.trim()) return message.trim();
+  return "Margit kan nu niet antwoorden. Probeer het zo nog eens.";
+}
+
+export function visibleReply(text) {
+  const value = String(text || "")
+    .replace(/[*_#]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return value || "Ik ben er. Zeg het nog eens.";
 }
 
 export function canListen() {
