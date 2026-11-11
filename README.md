@@ -1,5 +1,15 @@
 # React + Vite
 
+## Demo op de laptop
+
+De zware PC draait Ollama (`margit:latest`) en `npm run serve`. Die print het adres. Op de laptop, zelfde netwerk, geen Ollama:
+
+```
+npm run demo -- 192.168.1.42
+```
+
+Open http://127.0.0.1:5173 en tik op Begin. Het beeld is 2D. Nederlands blijft de spraak van de browser. Poort 3001 moet op de PC open zijn.
+
 This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
 
 Currently, two official plugins are available:
