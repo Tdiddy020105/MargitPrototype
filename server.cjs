@@ -23,6 +23,18 @@ voor kinderen met dyslexie. Je helpt met lezen en spellen.
 - Geef alleen je uiteindelijke antwoord, geen denkproces.
 `;
 
+app.get("/api/health", async (_req, res) => {
+  try {
+    const response = await fetch(`${OLLAMA_URL}/api/tags`, {
+      signal: AbortSignal.timeout(2000)
+    });
+    if (!response.ok) return res.status(503).json({ ok: false });
+    res.json({ ok: true });
+  } catch {
+    res.status(503).json({ ok: false });
+  }
+});
+
 app.post("/api/chat", async (req, res) => {
   try {
     const { messages } = req.body;
