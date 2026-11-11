@@ -12,6 +12,7 @@ import {
   visibleReply,
   voiceLangIsDutch
 } from "./speech.js";
+import { activityFromText } from "./games.js";
 import EenLetter from "./games/EenLetter.jsx";
 import MemorySpel from "./games/MemorySpel.jsx";
 import Woordzoeker from "./games/Woordzoeker.jsx";
@@ -109,50 +110,7 @@ function spokenText(text) {
 }
 
 function asksToSpell(text) {
-  const value = String(text || "")
-    .toLowerCase()
-    .replace(/[''`´"]/g, "")
-    .replace(/[^a-zàáäèéëìíïòóöùúü\s]/gi, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-
-  if (!value) return false;
-
-  const spoken = value
-    .replace(/\b(drie|twee|vier|welke|de|die|andere|alle|geen|leuke)\s+spellen\b/g, " ")
-    .replace(/\b(een|het|welk|dit|dat|ander|andere|leuk|leuke)\s+spel\b/g, " ");
-
-  if (/\b(spellen|spelt)\b/.test(spoken)) return true;
-  if (/\bspel\b/.test(spoken)) return true;
-  if (/\b(opschrijven|opschrijft|opschrijf|uitschrijven|schrijven|schrijft|schrijf)\b/.test(value)) return true;
-  if (value.includes("welke letter")) return true;
-  if (value.includes("letter voor letter")) return true;
-  if (/\b(de letters|alle letters|letters van|letters in|letters zitten)\b/.test(value)) return true;
-
-  return false;
-}
-
-function gameFromSpeech(text) {
-  const value = String(text || "")
-    .toLowerCase()
-    .replace(/é/g, "e")
-    .replace(/[^a-z0-9\s]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-
-  if (!value) return null;
-  if (value.includes("woordzoeker") || value.includes("woord zoeker")) return "zoek";
-  if (value.includes("memory")) return "memory";
-  if (
-    value.includes("letter anders")
-    || value.includes("een letter")
-    || value.includes("1 letter")
-    || value.includes("andere letter")
-  ) {
-    return "letter";
-  }
-
-  return null;
+  return activityFromText(text) === "spell";
 }
 
 function isEcho(text) {
@@ -235,6 +193,7 @@ export default function App() {
   const [voicesReady, setVoicesReady] = useState(false);
   const [femaleVoice, setFemaleVoice] = useState(false);
   const [game, setGame] = useState(null);
+  const [practiceSpell, setPracticeSpell] = useState(false);
   const [hearing, setHearing] = useState(false);
   const [micNote, setMicNote] = useState("");
   const [spelled, setSpelled] = useState("");
@@ -266,7 +225,9 @@ export default function App() {
 
   const latestReply = [...messages].reverse().find((message) => message.role === "assistant");
   const heardLine = [...messages].reverse().find((message) => message.role === "user");
-  const spelling = Boolean(!game && latestReply && asksToSpell(latestReply.content));
+  const replyActivity = !game && latestReply ? activityFromText(latestReply.content) : null;
+  const spelling = Boolean(!game && (practiceSpell || replyActivity === "spell"));
+  const choosing = Boolean(!game && !spelling && replyActivity === "choice");
   gameRef.current = game;
   loadingRef.current = loading;
   messagesRef.current = messages;
@@ -463,12 +424,12 @@ export default function App() {
     phaseRef.current = "thinking";
     setMicNote("");
 
-    const chosen = gameFromSpeech(trimmed);
-    if (chosen) {
-      switchAskRef.current = false;
+    const chosen = activityFromText(trimmed);
+    if (chosen === "zoek" || chosen === "letter" || chosen === "memory") {
       openGame(chosen);
       return;
     }
+    if (chosen === "spell") setPracticeSpell(true);
 
     if (gameRef.current || switchAskRef.current) {
       switchAskRef.current = false;
@@ -822,6 +783,24 @@ export default function App() {
       messagesRef.current = next;
       setMessages(next);
 
+      const childPlay = activityFromText(trimmed);
+      const replyPlay = activityFromText(reply);
+      const play = childPlay === "zoek" || childPlay === "letter" || childPlay === "memory" || childPlay === "spell"
+        ? childPlay
+        : replyPlay;
+      if (play === "zoek" || play === "letter" || play === "memory") {
+        clearListenWait();
+        haltRecognition();
+        markHearing(false);
+        missesRef.current = 0;
+        switchAskRef.current = false;
+        setPracticeSpell(false);
+        gameRef.current = play;
+        setGame(play);
+      } else if (play === "spell") {
+        setPracticeSpell(true);
+      }
+
       const again = () => {
         if (!listensAfterReply()) return;
         if (phaseRef.current === "listening") return;
@@ -924,6 +903,7 @@ export default function App() {
     missesRef.current = 0;
     switchAskRef.current = false;
     gameRef.current = name;
+    setPracticeSpell(false);
     setGame(name);
   }
 
@@ -933,6 +913,7 @@ export default function App() {
     missesRef.current = 0;
     switchAskRef.current = false;
     gameRef.current = null;
+    setPracticeSpell(false);
     setGame(null);
     offeredRef.current = true;
     askThenListen(OFFER);
@@ -964,6 +945,12 @@ export default function App() {
             </div>
           </div>
           <MargitAvatar mode={avatarMode} thinking={loading} />
+        </div>
+
+        <section className="talk">
+          {game === "zoek" && <Woordzoeker onBack={leaveGame} onReact={reactToGame} />}
+          {game === "letter" && <EenLetter onBack={leaveGame} onReact={reactToGame} />}
+          {game === "memory" && <MemorySpel onBack={leaveGame} onReact={reactToGame} />}
           {!game && spelling && (
             <SpellPad
               value={spelled}
@@ -973,12 +960,19 @@ export default function App() {
               onSend={sendSpelling}
             />
           )}
-        </div>
-
-        <section className="talk">
-          {game === "zoek" && <Woordzoeker onBack={leaveGame} onReact={reactToGame} />}
-          {game === "letter" && <EenLetter onBack={leaveGame} onReact={reactToGame} />}
-          {game === "memory" && <MemorySpel onBack={leaveGame} onReact={reactToGame} />}
+          {choosing && (
+            <div className="choices">
+              <button type="button" className="starter" onClick={() => openGame("zoek")}>
+                Woordzoeker
+              </button>
+              <button type="button" className="starter" onClick={() => openGame("letter")}>
+                Eén letter anders
+              </button>
+              <button type="button" className="starter" onClick={() => openGame("memory")}>
+                Memory
+              </button>
+            </div>
+          )}
 
           <div className="converse">
             {latestReply ? (

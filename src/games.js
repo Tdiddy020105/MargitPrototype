@@ -163,6 +163,73 @@ export function matchesPlaced(placed, cells) {
   );
 }
 
+function foldActivity(text) {
+  return String(text || "")
+    .toLowerCase()
+    .replace(/é/g, "e")
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function lineAsksToSpell(text) {
+  const value = String(text || "")
+    .toLowerCase()
+    .replace(/[''`´"]/g, "")
+    .replace(/[^a-zàáäèéëìíïòóöùúü\s]/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!value) return false;
+
+  const spoken = value
+    .replace(/\b(drie|twee|vier|welke|de|die|andere|alle|geen|leuke)\s+spellen\b/g, " ")
+    .replace(/\b(een|het|welk|dit|dat|ander|andere|leuk|leuke)\s+spel\b/g, " ");
+
+  if (/\b(spellen|spelt)\b/.test(spoken)) return true;
+  if (/\bspel\b/.test(spoken)) return true;
+  if (/\b(opschrijven|opschrijft|opschrijf|uitschrijven|schrijven|schrijft|schrijf)\b/.test(value)) return true;
+  if (value.includes("welke letter")) return true;
+  if (value.includes("letter voor letter")) return true;
+  if (/\b(de letters|alle letters|letters van|letters in|letters zitten)\b/.test(value)) return true;
+  if (/\b(tik|typ)\b/.test(value) && /\bletters?\b/.test(value)) return true;
+  return false;
+}
+
+// One named activity starts that game. Several names are a choice.
+// "Ik pak de kaartjes" is memory. A spelling line opens the keyboard.
+export function activityFromText(text) {
+  const value = foldActivity(text);
+  if (!value) return null;
+  if (/te moeilijk|te lastig|kan dit niet/.test(value)) return null;
+
+  const found = [];
+  if (value.includes("woordzoeker") || value.includes("woord zoeker")) found.push("zoek");
+  if (
+    value.includes("letter anders")
+    || value.includes("een letter")
+    || value.includes("1 letter")
+    || value.includes("andere letter")
+  ) found.push("letter");
+  if (
+    value.includes("memory")
+    || value.includes("geheugen")
+    || /\bkaartjes?\b/.test(value)
+    || /\bkaarten\b/.test(value)
+    || /\bkaart\b/.test(value)
+  ) found.push("memory");
+
+  if (found.length > 1) return "choice";
+  const looseLetter = found.length === 1
+    && found[0] === "letter"
+    && !value.includes("letter anders")
+    && !value.includes("andere letter");
+  if (looseLetter && lineAsksToSpell(text)) return "spell";
+  if (found.length === 1) return found[0];
+  if (lineAsksToSpell(text)) return "spell";
+  return null;
+}
+
 export function makeMemory(words, random = Math.random) {
   const cards = words.flatMap((word) => [
     { id: `${word}-a`, word },

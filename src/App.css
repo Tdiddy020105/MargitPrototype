@@ -338,6 +338,17 @@ form button {
   color: #5c564e;
 }
 
+.choices {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0 0 8px;
+}
+
+.choices .starter {
+  width: 100%;
+}
+
 .spell {
   display: flex;
   flex-direction: column;
@@ -369,6 +380,15 @@ form button {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: 4px;
+}
+
+.key,
+.cell,
+.card,
+.starter,
+.listen,
+.spell-send {
+  touch-action: manipulation;
 }
 
 .key {
@@ -704,10 +724,35 @@ form button:disabled:hover {
   }
 
   .talk {
-    flex: 0 0 auto;
+    display: flex;
+    flex: 0 1 auto;
+    flex-direction: column;
     min-height: 0;
+    max-height: 70%;
+    overflow: auto;
     padding: 0;
     background: #f6f1e8;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .converse {
+    position: sticky;
+    bottom: 0;
+    z-index: 2;
+    background: #f6f1e8;
+  }
+
+  .stage:has(.game) .talk,
+  .stage:has(.spell) .talk {
+    flex: 1 1 auto;
+    max-height: none;
+  }
+
+  .stage:has(.game) .presence,
+  .stage:has(.spell) .presence {
+    flex: 0 1 30%;
+    min-height: 0;
+    overflow: hidden;
   }
 
   .converse {
@@ -718,10 +763,18 @@ form button:disabled:hover {
     flex: 0 1 38%;
   }
 
-  .stage:has(.game) .talk {
+  .stage:has(.game) .talk,
+  .stage:has(.spell) .talk {
     flex: 1 1 auto;
     min-height: 0;
     overflow: hidden;
+  }
+
+  .stage:has(.spell) .spell {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;
+    -webkit-overflow-scrolling: touch;
   }
 
   .listen,
@@ -777,6 +830,12 @@ form button:disabled:hover {
 
   .listen {
     width: 100%;
+  }
+
+  .key,
+  .spell-send,
+  .choices .starter {
+    min-height: 40px;
   }
 
   .opening ~ form {

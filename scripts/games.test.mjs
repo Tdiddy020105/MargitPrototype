@@ -23,6 +23,7 @@ import {
   makeMemory,
   makeWordSearch,
   matchesPlaced,
+  activityFromText,
   wantsGame
 } from "../src/games.js";
 
@@ -158,6 +159,22 @@ test("the Chrome speech pulse stays off on iPhone", () => {
     }),
     false
   );
+});
+
+test("a card line opens memory and a spelling line opens the keyboard", () => {
+  assert.equal(activityFromText("Ik pak de kaartjes."), "memory");
+  assert.equal(activityFromText("Ik leg de kaarten klaar."), "memory");
+  assert.equal(activityFromText("Laten we woordzoeker doen."), "zoek");
+  assert.equal(activityFromText("We doen één letter anders."), "letter");
+  assert.equal(activityFromText("Schrijf het woord eens op."), "spell");
+  assert.equal(activityFromText("Schrijf een letter."), "spell");
+  assert.equal(activityFromText("Tik de letters."), "spell");
+  assert.equal(
+    activityFromText("Wat wil je doen? We kunnen woordzoeker, één letter anders, of memory spelen."),
+    "choice"
+  );
+  assert.equal(activityFromText("Hoi, hoe gaat het?"), null);
+  assert.equal(activityFromText("memory is te moeilijk"), null);
 });
 
 test("speech cues pick a game, help, or too hard", () => {
