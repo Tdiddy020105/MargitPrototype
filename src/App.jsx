@@ -5,6 +5,7 @@ import {
   CHAT_TIMEOUT_MS,
   DUTCH_VOICE_LINE,
   isAppleMobile,
+  needsChromePulse,
   pickDutchVoice,
   recognitionSettings,
   voiceLangIsDutch
@@ -295,6 +296,11 @@ export default function App() {
     const synth = window.speechSynthesis;
     const voice = currentVoice();
     if (epoch !== replyEpoch.current) return false;
+    if (!voice || !voiceLangIsDutch(voice.lang)) {
+      pendingSpeak.current = { text, mode, onDone, epoch };
+      setMicNote(text.trim());
+      return false;
+    }
     pendingSpeak.current = null;
 
     const shouldCancel = speakId.current > 0;
@@ -308,13 +314,7 @@ export default function App() {
 
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.lang = "nl-NL";
-    if (voice) {
-      try {
-        utterance.voice = voice;
-      } catch {
-        // Speak with the device voice. A rejected voice must not drop the line.
-      }
-    }
+    utterance.voice = voice;
 
     let started = false;
     let finished = false;
@@ -336,7 +336,7 @@ export default function App() {
     };
     utterance.onend = finish;
     utterance.onerror = () => {
-      if (!started) setMicNote("Hoi! Ik ben Margit.");
+      if (!started) setMicNote(text.trim());
       finish();
     };
 
@@ -349,10 +349,10 @@ export default function App() {
       }
       setAvatarMode(mode);
       try {
-        synth.resume();
+        if (needsChromePulse()) synth.resume();
         synth.speak(utterance);
       } catch {
-        setMicNote("Hoi! Ik ben Margit.");
+        setMicNote(text.trim());
         finish();
         return;
       }
@@ -362,7 +362,7 @@ export default function App() {
           started = true;
           return;
         }
-        setMicNote("Hoi! Ik ben Margit.");
+        setMicNote(text.trim());
         finish();
       }, 1200);
       cap = window.setTimeout(() => {
@@ -394,12 +394,6 @@ export default function App() {
           if (earlier) earlier();
           finish();
         };
-        window.setTimeout(() => {
-          if (!settled && pendingSpeak.current && pendingSpeak.current.text === text) {
-            pendingSpeak.current = null;
-            finish();
-          }
-        }, 1800);
         return;
       }
       finish();
