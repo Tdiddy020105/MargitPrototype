@@ -140,18 +140,24 @@ input {
 }
 
 .avatar {
+  position: relative;
   flex: 1 1 auto;
-  min-height: 180px;
+  align-self: stretch;
+  min-height: 52dvh;
   width: 100%;
+  height: auto;
   display: flex;
   align-items: flex-end;
   justify-content: center;
 }
 
 .avatar img {
+  position: relative;
+  z-index: 2;
   display: block;
   width: auto;
   height: 100%;
+  min-height: 52dvh;
   max-width: 100%;
   object-fit: contain;
   object-position: center bottom;
@@ -161,6 +167,8 @@ input {
 .figure-view {
   position: absolute;
   inset: 0;
+  z-index: 1;
+  min-height: 52dvh;
 }
 
 .figure-view canvas {
@@ -713,7 +721,7 @@ form button:disabled:hover {
   .presence {
     flex: 1 1 auto;
     height: auto;
-    min-height: 0;
+    min-height: 52dvh;
     overflow: hidden;
     z-index: 1;
   }
@@ -760,7 +768,8 @@ form button:disabled:hover {
   }
 
   .avatar {
-    min-height: 0;
+    flex: 1 1 auto;
+    min-height: 52dvh;
     overflow: hidden;
   }
 
@@ -872,8 +881,8 @@ form button:disabled:hover {
     max-width: 100%;
     height: auto;
     flex: 1 1 auto;
-    min-height: 0;
-    max-height: 62dvh;
+    min-height: 52dvh;
+    max-height: none;
     margin: 0 auto;
     overflow: hidden;
   }

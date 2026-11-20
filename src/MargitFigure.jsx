@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 
 const THREE_URL = "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js";
 const LOADER_URL = "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/loaders/GLTFLoader.js";
-const MODEL_URL = "/img/margit.glb";
+const MODEL_URLS = ["/models/margit.glb", "/img/margit.glb"];
 // talking.glb, motivational.glb, and confusedscratching.glb are the same file.
 // It holds every clip. wave.glb and celebrate.glb are a smaller copy of two of them.
 const ANIM_URL = "/anims/talking.glb";
@@ -52,8 +52,8 @@ function startViewer(THREE, GLTFLoader, host, modeRef, onReady) {
   const clock = new THREE.Clock();
 
   function resize() {
-    const width = host.clientWidth;
-    const viewHeight = host.clientHeight;
+    const width = host.clientWidth || host.parentElement?.clientWidth || 320;
+    const viewHeight = host.clientHeight || 560;
     if (!width || !viewHeight) return;
     camera.aspect = width / viewHeight;
     camera.updateProjectionMatrix();
@@ -128,8 +128,8 @@ function startViewer(THREE, GLTFLoader, host, modeRef, onReady) {
   function tick() {
     if (dead) return;
     raf = requestAnimationFrame(tick);
-    const width = host.clientWidth;
-    const viewHeight = host.clientHeight;
+    const width = host.clientWidth || host.parentElement?.clientWidth || 0;
+    const viewHeight = host.clientHeight || 0;
     if (width && viewHeight && (width !== lastW || viewHeight !== lastH)) {
       lastW = width;
       lastH = viewHeight;
@@ -197,18 +197,28 @@ function startViewer(THREE, GLTFLoader, host, modeRef, onReady) {
 
   const loader = new GLTFLoader();
   const animLoader = new GLTFLoader();
-  loader.load(
-    MODEL_URL,
-    (gltf) => {
-      if (dead) return;
-      modelGltf = gltf;
-      boot();
-    },
-    undefined,
-    () => {
+  function loadFirst(urls) {
+    const [url, ...rest] = urls;
+    if (!url) {
       if (!dead) onReady(new Error("model"));
+      return;
     }
-  );
+    loader.load(
+      url,
+      (gltf) => {
+        if (dead) return;
+        modelGltf = gltf;
+        boot();
+      },
+      undefined,
+      () => {
+        if (dead) return;
+        if (rest.length) loadFirst(rest);
+        else onReady(new Error("model"));
+      }
+    );
+  }
+  loadFirst(MODEL_URLS);
   animLoader.load(
     ANIM_URL,
     (gltf) => {
