@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import "./App.css";
 import MargitFigure from "./MargitFigure.jsx";
-import { CHAT_TIMEOUT_MS, isAppleMobile, recognitionSettings } from "./speech.js";
+import { CHAT_TIMEOUT_MS, isAppleMobile, offerTypedReply, recognitionSettings } from "./speech.js";
 import { hearHelp, hearTooHard, spellingIsRight } from "./games.js";
 import { poseForTurn } from "./clips.js";
 import {
@@ -83,6 +83,8 @@ export default function App() {
   const [spelled, setSpelled] = useState("");
   const [hearing, setHearing] = useState(false);
   const [micNote, setMicNote] = useState("");
+  const [replyOpen, setReplyOpen] = useState(false);
+  const [typed, setTyped] = useState("");
   const [muted, setMuted] = useState(false);
   const [avatarMode, setAvatarMode] = useState("wave");
 
@@ -99,6 +101,7 @@ export default function App() {
   const mutedRef = useRef(false);
   const speakId = useRef(0);
   const playerRef = useRef(null);
+  const replyRef = useRef(null);
   const listenRef = useRef(null);
   const listenId = useRef(0);
   const hearingRef = useRef(false);
@@ -287,15 +290,32 @@ export default function App() {
   function speak(text, mode) {
     return new Promise((resolve) => {
       let settled = false;
+      let cap = 0;
       const finish = () => {
         if (settled) return;
         settled = true;
+        window.clearTimeout(cap);
         if (speakDone.current === finish) speakDone.current = null;
         resolve();
       };
+      cap = window.setTimeout(() => {
+        if (playerIsPlaying()) {
+          cap = window.setTimeout(finish, 20000);
+          return;
+        }
+        finish();
+      }, 8000);
       speakDone.current = finish;
       if (!speakReply(text, mode, finish)) finish();
     });
+  }
+
+  function showReply() {
+    if (gameRef.current) return;
+    const now = flowRef.current;
+    if (now === "pause" || now === "offer" || now === "game") return;
+    setReplyOpen(true);
+    setMicNote("Typ je antwoord.");
   }
 
   function beginListen() {
@@ -303,7 +323,7 @@ export default function App() {
     if (!Ctor) {
       phaseRef.current = "idle";
       markHearing(false);
-      setMicNote("Deze browser heeft geen microfoon.");
+      showReply();
       return;
     }
     clearListenWait();
@@ -337,9 +357,7 @@ export default function App() {
   function handleSilence() {
     phaseRef.current = "idle";
     markHearing(false);
-    if (flowRef.current === "mood" || flowRef.current === "spell") {
-      setMicNote("Ik hoorde niets. Probeer nog eens.");
-    }
+    if (offerTypedReply({ recognizer: true, started: true, transcript: "" })) showReply();
   }
 
   function takePhrase(text) {
@@ -350,6 +368,8 @@ export default function App() {
       return;
     }
     setMicNote("");
+    setReplyOpen(false);
+    setTyped("");
     if (hearSensitive(trimmed)) {
       pauseForResearch();
       return;
@@ -380,17 +400,25 @@ export default function App() {
     rec.maxAlternatives = 1;
 
     let handled = false;
+    let engineStarted = false;
     let latest = "";
     let silence = null;
     let grace = null;
     let watchdog = null;
+    let slow = null;
     const clearTimers = () => {
       if (silence) clearTimeout(silence);
       if (grace) clearTimeout(grace);
       if (watchdog) clearTimeout(watchdog);
+      if (slow) clearTimeout(slow);
       silence = null;
       grace = null;
       watchdog = null;
+      slow = null;
+    };
+    const markStarted = () => {
+      engineStarted = true;
+      markHearing(true);
     };
     const close = () => {
       if (handled || listenId.current !== id) return;
@@ -417,8 +445,14 @@ export default function App() {
         }, 400);
       }, 1100);
     };
+    rec.onstart = () => {
+      if (handled || listenId.current !== id) return;
+      markStarted();
+      setMicNote((current) => (current === "Typ je antwoord." ? "" : current));
+    };
     rec.onresult = (event) => {
       if (handled || listenId.current !== id) return;
+      markStarted();
       let finalText = "";
       let interim = "";
       for (let i = 0; i < event.results.length; i += 1) {
@@ -433,19 +467,10 @@ export default function App() {
     rec.onerror = (event) => {
       if (handled || listenId.current !== id) return;
       const code = event.error || "";
-      if (code === "not-allowed" && (flowRef.current === "mood" || flowRef.current === "hello")) {
-        handled = true;
-        clearTimers();
-        listenRef.current = null;
-        markHearing(false);
-        phaseRef.current = "idle";
-        setMicNote("Tik nog eens. Dan luister ik.");
-        return;
-      }
       if ((code === "aborted" || code === "no-speech") && !latest.trim()) {
         grace = setTimeout(() => {
           if (!handled && listenId.current === id) close();
-        }, 500);
+        }, 400);
         return;
       }
       if (code === "aborted" || code === "no-speech" || latest.trim()) {
@@ -457,7 +482,7 @@ export default function App() {
       listenRef.current = null;
       markHearing(false);
       phaseRef.current = "idle";
-      setMicNote("De microfoon doet het niet. Probeer nog eens.");
+      showReply();
     };
     rec.onend = () => {
       if (handled || listenId.current !== id) return;
@@ -482,28 +507,35 @@ export default function App() {
     }, isAppleMobile() ? 12000 : 20000);
     try {
       rec.start();
-      markHearing(true);
-      setMicNote((current) =>
-        current === "Hoi! Ik ben Margit." || current === "De stem staat uit." ? current : ""
-      );
+      if (isAppleMobile()) {
+        slow = setTimeout(() => {
+          if (handled || listenId.current !== id || engineStarted) return;
+          if (offerTypedReply({ recognizer: true, started: false, transcript: latest })) showReply();
+        }, 700);
+      }
     } catch {
       handled = true;
       clearTimers();
       phaseRef.current = "idle";
       markHearing(false);
-      setMicNote("De microfoon doet het niet. Probeer nog eens.");
+      showReply();
     }
+  }
+
+  function sendTyped(event) {
+    event.preventDefault();
+    const text = typed.trim();
+    if (!text) return;
+    stopListening();
+    takePhrase(text);
   }
 
   function onMic() {
     const now = Date.now();
-    if (now - tapStamp.current < 450) return;
+    if (now - tapStamp.current < 700) return;
     tapStamp.current = now;
     unlockAudio();
-    const sayingHello = flowRef.current === "hello" && playerIsPlaying();
-    if (!startedRef.current || (flowRef.current === "hello" && !sayingHello)) {
-      if (startedRef.current) stopSpeaking();
-      startedRef.current = false;
+    if (!startedRef.current) {
       setAvatarMode("wave");
       setMicNote(mutedRef.current ? "De stem staat uit." : "Hoi! Ik ben Margit.");
       beginSession();
@@ -796,6 +828,25 @@ export default function App() {
                     <p className="listen-state" role="status">
                       {micNote}
                     </p>
+                  ) : null}
+                  {replyOpen ? (
+                    <form className="typed" onSubmit={sendTyped}>
+                      <input
+                        ref={replyRef}
+                        value={typed}
+                        onChange={(event) => setTyped(event.target.value)}
+                        placeholder="Typ je antwoord"
+                        aria-label="Typ je antwoord"
+                        autoFocus
+                        autoComplete="off"
+                        autoCapitalize="sentences"
+                        enterKeyHint="send"
+                        inputMode="text"
+                      />
+                      <button type="submit" disabled={!typed.trim()}>
+                        Stuur
+                      </button>
+                    </form>
                   ) : null}
                   <button
                     type="button"

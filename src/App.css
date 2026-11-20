@@ -347,6 +347,45 @@ form button {
   color: #1c1916;
 }
 
+.typed {
+  position: relative;
+  z-index: 42;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+  margin: 8px 0 0;
+  pointer-events: auto;
+}
+
+.typed input {
+  min-height: 64px;
+  padding: 0.6em 0.8em;
+  border: 1px solid #1b3f73;
+  border-radius: 20px;
+  background: #fffdf8;
+  font-size: 20px;
+}
+
+.typed button {
+  flex: 0 0 auto;
+  min-height: 64px;
+  padding: 0 1em;
+  border: 0;
+  border-radius: 20px;
+  background: #1b3f73;
+  color: #f6f1e8;
+  font: inherit;
+  font-size: 20px;
+  font-weight: 650;
+  touch-action: manipulation;
+}
+
+.typed button:disabled {
+  background: #c8bfb2;
+  color: #f6f1e8;
+}
+
 .reply {
   flex: 0 1 auto;
   max-height: min(18dvh, 8.5rem);
@@ -1028,7 +1067,8 @@ form button:disabled:hover {
 .stage.spelling .key,
 .stage.spelling .spell-send,
 .stage.spelling .converse,
-.stage.spelling .listen {
+.stage.spelling .listen,
+.stage.spelling .typed {
   position: relative;
   z-index: 41;
   pointer-events: auto;

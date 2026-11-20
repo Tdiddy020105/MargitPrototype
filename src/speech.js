@@ -69,6 +69,12 @@ export function listensAfterReply(nav = globalThis.navigator) {
   return !isAppleMobile(nav);
 }
 
+// iPad Chrome often never starts webkitSpeechRecognition, or ends with no words.
+export function offerTypedReply({ recognizer = true, started = false, transcript = "" } = {}) {
+  if (!recognizer || !started) return true;
+  return !String(transcript || "").trim();
+}
+
 export const CHAT_TIMEOUT_MS = 45000;
 
 export function calmChatError(err) {
