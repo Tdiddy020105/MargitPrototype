@@ -857,7 +857,16 @@ export default function App() {
     <div className="tablet">
       <div className="screen">
         <div className="app">
-          <div className={showKeys ? "stage spelling" : "stage"}>
+          <div
+            className={[
+              "stage",
+              showKeys ? "spelling" : "",
+              !game && flow === "offer" ? "choosing" : "",
+              game ? "playing" : ""
+            ]
+              .filter(Boolean)
+              .join(" ")}
+          >
             <div className="presence">
               <div className="intro">
                 <div className="voice">
