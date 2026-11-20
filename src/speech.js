@@ -79,9 +79,9 @@ export function playbackWaitMs(durationSec) {
   return Math.ceil(seconds * 1000) + 500;
 }
 
-// One empty end is a restart while "Ik luister" is showing. The next empty end is final.
-export function emptyListenShouldRestart(attempts) {
-  return Number(attempts) < 1;
+// iPad Chrome ends a session with no words immediately. That is not a miss.
+export function emptyListenShouldRestart() {
+  return true;
 }
 
 export function dutchBody(text, fallback) {

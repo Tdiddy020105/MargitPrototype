@@ -447,25 +447,13 @@ export default function App() {
     phaseRef.current = "listening";
     markHearing(true);
     setMicNote("Ik luister");
-    openRecognizer(Ctor, id, false);
-  }
-
-  function sayMissed() {
-    const line = "Ik hoorde je niet.";
-    bump();
-    stopListening();
-    stopSpeaking();
-    setMicNote(line);
-    speak(line, "talk");
+    openRecognizer(Ctor, id);
   }
 
   function takePhrase(text) {
     const trimmed = String(text || "").trim();
+    if (!trimmed) return;
     phaseRef.current = "idle";
-    if (!trimmed) {
-      sayMissed();
-      return;
-    }
     setMicNote("");
     if (hearSensitive(trimmed)) {
       pauseForResearch();
@@ -488,7 +476,7 @@ export default function App() {
     answerChild(trimmed);
   }
 
-  function openRecognizer(Ctor, id, retried) {
+  function openRecognizer(Ctor, id) {
     if (listenId.current !== id || phaseRef.current !== "listening") return;
     const rec = new Ctor();
     listenRef.current = rec;
@@ -501,7 +489,6 @@ export default function App() {
     let latest = "";
     let grace = null;
     let restarting = false;
-    let attempts = retried ? 1 : 0;
     const clearTimers = () => {
       if (grace) clearTimeout(grace);
       grace = null;
@@ -516,11 +503,7 @@ export default function App() {
         deliver(latest);
         return;
       }
-      if (!emptyListenShouldRestart(attempts)) {
-        miss();
-        return;
-      }
-      attempts += 1;
+      if (!emptyListenShouldRestart()) return;
       restarting = true;
       showListening();
       window.setTimeout(() => {
@@ -539,19 +522,9 @@ export default function App() {
           rec.onerror = null;
           rec.onresult = null;
           rec.onstart = null;
-          openRecognizer(Ctor, id, true);
+          openRecognizer(Ctor, id);
         }
       }, 200);
-    };
-    const miss = () => {
-      if (handled || listenId.current !== id) return;
-      handled = true;
-      clearTimers();
-      listenRef.current = null;
-      markHearing(false);
-      phaseRef.current = "idle";
-      setMicEnabled(true);
-      sayMissed();
     };
     const deliver = (text) => {
       const heard = String(text || "").trim();
@@ -661,15 +634,7 @@ export default function App() {
       return;
     }
     if (flowRef.current === "hello") return;
-    const text = heardDraft.current.trim();
-    const busy = hearingRef.current || phaseRef.current === "listening";
-    if (busy && text) {
-      stopSpeaking();
-      stopListening();
-      takePhrase(text);
-      return;
-    }
-    if (busy) return;
+    if (hearingRef.current || phaseRef.current === "listening") return;
     beginListen();
   }
 
