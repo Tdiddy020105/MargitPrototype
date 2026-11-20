@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import "./App.css";
 import { apiUrl, publicUrl } from "./api.js";
 import MargitFigure from "./MargitFigure.jsx";
-import { CHAT_TIMEOUT_MS, dutchBody, emptyListenShouldRestart, isAppleMobile, playbackWaitMs } from "./speech.js";
+import { CHAT_TIMEOUT_MS, dutchBody, isAppleMobile, playbackWaitMs } from "./speech.js";
 import { hearHelp, hearTooHard, spellingIsRight } from "./games.js";
 import { poseForTurn } from "./clips.js";
 import {
@@ -83,9 +83,12 @@ export default function App() {
   const [keysOpen, setKeysOpen] = useState(false);
   const [spelled, setSpelled] = useState("");
   const [hearing, setHearing] = useState(false);
-  const [micNote, setMicNote] = useState("");
   const [muted, setMuted] = useState(false);
   const [avatarMode, setAvatarMode] = useState("wave");
+
+  function setMicNote() {
+    // Her lines are only played. They are not written on the screen.
+  }
 
   const flowRef = useRef("hello");
   const gameRef = useRef(null);
@@ -455,7 +458,6 @@ export default function App() {
     const id = listenId.current;
     phaseRef.current = "listening";
     markHearing(true);
-    setMicNote("Ik luister");
     openRecognizer(Ctor, id);
   }
 
@@ -499,28 +501,12 @@ export default function App() {
     let latest = "";
     let grace = null;
     let restarting = false;
-    let attempts = 0;
     const clearTimers = () => {
       if (grace) clearTimeout(grace);
       grace = null;
     };
     const showListening = () => {
       markHearing(true);
-      setMicNote("Ik luister");
-    };
-    const giveUp = (note) => {
-      if (handled) return;
-      handled = true;
-      clearTimers();
-      markHearing(false);
-      phaseRef.current = "idle";
-      setMicEnabled(true);
-      setMicNote(note);
-      try {
-        rec.stop();
-      } catch {
-        // The listen is already closed.
-      }
     };
     const onEmpty = () => {
       if (handled || listenId.current !== id || restarting) return;
@@ -528,11 +514,6 @@ export default function App() {
         deliver(latest);
         return;
       }
-      if (!emptyListenShouldRestart(attempts)) {
-        giveUp("Ik hoorde je niet.");
-        return;
-      }
-      attempts += 1;
       restarting = true;
       showListening();
       window.setTimeout(() => {
@@ -547,9 +528,9 @@ export default function App() {
         } catch (error) {
           const message = String((error && error.message) || "");
           if (/already started/i.test(message)) return;
-          giveUp(micWasDenied(error) ? "De microfoon mag niet." : "Ik hoorde je niet.");
+          // A new recognizer asks for the microphone again. Stay on this one.
         }
-      }, 200);
+      }, 600);
     };
     const deliver = (text) => {
       const heard = String(text || "").trim();
@@ -605,7 +586,6 @@ export default function App() {
         markHearing(false);
         phaseRef.current = "idle";
         setMicEnabled(true);
-        setMicNote("De microfoon mag niet.");
         return;
       }
       if (code === "aborted") return;
@@ -628,7 +608,10 @@ export default function App() {
       showListening();
     } catch (error) {
       if (micWasDenied(error)) {
-        giveUp("De microfoon mag niet.");
+        handled = true;
+        clearTimers();
+        markHearing(false);
+        phaseRef.current = "idle";
         return;
       }
       showListening();
@@ -643,7 +626,6 @@ export default function App() {
     unlockAudio();
     if (!startedRef.current) {
       setAvatarMode("wave");
-      setMicNote(mutedRef.current ? "De stem staat uit." : "Hoi! Ik ben Margit.");
       const ready = askMicOnce();
       beginSession(ready);
       return;
@@ -939,11 +921,6 @@ export default function App() {
               )}
               {showMic && (
                 <div className="converse">
-                  {micNote ? (
-                    <p className="listen-state" role="status">
-                      {micNote}
-                    </p>
-                  ) : null}
                   <button
                     type="button"
                     className="listen"
