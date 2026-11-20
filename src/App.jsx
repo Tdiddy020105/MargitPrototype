@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import "./App.css";
 import MargitFigure from "./MargitFigure.jsx";
-import { CHAT_TIMEOUT_MS, isAppleMobile } from "./speech.js";
+import { CHAT_TIMEOUT_MS, dutchBody, isAppleMobile, playbackWaitMs } from "./speech.js";
 import { hearHelp, hearTooHard, spellingIsRight } from "./games.js";
 import { poseForTurn } from "./clips.js";
 import {
@@ -194,6 +194,7 @@ export default function App() {
     clearListenWait();
     haltRecognition();
     markHearing(false);
+    setMicEnabled(true);
   }
 
   function ensurePlayer() {
@@ -212,11 +213,6 @@ export default function App() {
     const pending = audio.play();
     if (pending && typeof pending.catch === "function") pending.catch(() => {});
     audio.dataset.unlocked = "1";
-  }
-
-  function playerIsPlaying() {
-    const audio = playerRef.current;
-    return Boolean(audio && !audio.paused && !audio.ended && audio.currentSrc && !audio.currentSrc.startsWith("data:"));
   }
 
   function stopSpeaking() {
@@ -244,48 +240,105 @@ export default function App() {
     speakId.current = id;
     if (mutedRef.current) {
       setMicNote("De stem staat uit.");
-      if (onDone) onDone();
+      if (onDone) onDone(false);
       return true;
     }
     const audio = ensurePlayer();
+    let playbackCap = 0;
+    let closed = false;
+    const clearPlayback = () => window.clearTimeout(playbackCap);
+    const succeed = () => {
+      if (closed || speakId.current !== id) return;
+      closed = true;
+      clearPlayback();
+      setAvatarMode(flowRef.current === "hello" ? "wave" : "idle");
+      if (onDone) onDone(true);
+    };
+    const fail = (note) => {
+      if (closed || speakId.current !== id) return;
+      closed = true;
+      clearPlayback();
+      try {
+        audio.pause();
+      } catch {
+        // The player was already idle.
+      }
+      setMicNote(note);
+      if (onDone) onDone(false);
+    };
     fetch("/api/speak", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text: line })
     })
       .then(async (response) => {
+        if (speakId.current !== id) return;
         if (!response.ok) {
-          const detail = (await response.text()).trim();
-          throw new Error(detail || `De stem gaf ${response.status}.`);
+          fail(dutchBody(await response.text(), "De stem doet het niet."));
+          return;
         }
         const blob = await response.blob();
         if (speakId.current !== id) return;
         const url = URL.createObjectURL(blob);
-        const finish = () => {
+        let released = false;
+        const release = () => {
+          if (released) return;
+          released = true;
           URL.revokeObjectURL(url);
-          if (speakId.current !== id) return;
-          setAvatarMode(flowRef.current === "hello" ? "wave" : "idle");
-          if (onDone) onDone();
         };
-        audio.onended = finish;
+        let armed = false;
+        let started = false;
+        const armWait = () => {
+          if (!started) return;
+          const wait = playbackWaitMs(audio.duration);
+          if (wait >= 70000) return;
+          clearPlayback();
+          playbackCap = window.setTimeout(() => {
+            succeed();
+            release();
+          }, wait);
+        };
+        audio.onended = () => {
+          if (!armed || closed || speakId.current !== id) return;
+          succeed();
+          release();
+        };
         audio.onerror = () => {
-          setMicNote("De stem wil niet afspelen.");
-          finish();
+          if (!armed || closed || speakId.current !== id) return;
+          fail("De stem wil niet afspelen.");
+          release();
         };
+        audio.onloadedmetadata = armWait;
+        audio.ondurationchange = armWait;
         audio.src = url;
+        armed = true;
         setAvatarMode(mode);
-        const played = audio.play();
-        if (played && typeof played.catch === "function") {
-          played.catch((error) => {
-            setMicNote(error?.message || "De stem wil niet afspelen.");
-            finish();
+        const markStarted = () => {
+          if (speakId.current !== id) return;
+          started = true;
+          armWait();
+        };
+        let played;
+        try {
+          played = audio.play();
+        } catch {
+          release();
+          fail("De stem wil niet afspelen.");
+          return;
+        }
+        if (played && typeof played.then === "function") {
+          played.then(markStarted).catch((error) => {
+            if (!armed || speakId.current !== id) return;
+            if (error && error.name === "AbortError") return;
+            release();
+            fail("De stem wil niet afspelen.");
           });
+        } else {
+          markStarted();
         }
       })
-      .catch((error) => {
-        if (speakId.current !== id) return;
-        setMicNote(error?.message || "De stem doet het niet.");
-        if (onDone) onDone();
+      .catch(() => {
+        fail("De stem doet het niet.");
       });
     return true;
   }
@@ -293,23 +346,19 @@ export default function App() {
   function speak(text, mode) {
     return new Promise((resolve) => {
       let settled = false;
-      let cap = 0;
-      const finish = () => {
+      const finish = (ok) => {
         if (settled) return;
         settled = true;
         window.clearTimeout(cap);
         if (speakDone.current === finish) speakDone.current = null;
-        resolve();
+        resolve(ok !== false);
       };
-      cap = window.setTimeout(() => {
-        if (playerIsPlaying()) {
-          cap = window.setTimeout(finish, 20000);
-          return;
-        }
-        finish();
-      }, 8000);
+      const cap = window.setTimeout(() => {
+        setMicNote("De stem wil niet afspelen.");
+        finish(false);
+      }, 70000);
       speakDone.current = finish;
-      if (!speakReply(text, mode, finish)) finish();
+      if (!speakReply(text, mode, finish)) finish(true);
     });
   }
 
@@ -361,7 +410,16 @@ export default function App() {
         micStream.current = null;
         micState.current = "denied";
         if (micWasDenied(error)) denyMic();
+        else setMicNote("De microfoon doet het niet.");
       });
+  }
+
+  function setMicEnabled(enabled) {
+    const stream = micStream.current;
+    if (!stream) return;
+    for (const track of stream.getAudioTracks()) {
+      if (track.readyState === "live") track.enabled = enabled;
+    }
   }
 
   function beginListen() {
@@ -369,7 +427,7 @@ export default function App() {
     if (!Ctor) {
       phaseRef.current = "idle";
       markHearing(false);
-      setMicNote("De microfoon mag niet.");
+      setMicNote("De microfoon doet het niet.");
       return;
     }
     clearListenWait();
@@ -432,35 +490,23 @@ export default function App() {
     let handled = false;
     let latest = "";
     let grace = null;
-    let restart = null;
     const clearTimers = () => {
       if (grace) clearTimeout(grace);
-      if (restart) clearTimeout(restart);
       grace = null;
-      restart = null;
     };
     const showListening = () => {
       markHearing(true);
       setMicNote("Ik luister");
     };
-    const keepOpen = () => {
-      if (handled || listenId.current !== id || latest.trim() || restart) return;
-      showListening();
-      restart = window.setTimeout(() => {
-        restart = null;
-        if (handled || listenId.current !== id || latest.trim()) return;
-        try {
-          rec.start();
-        } catch (error) {
-          const message = String((error && error.message) || "");
-          if (/already started|invalidstate/i.test(message)) return;
-          rec.onend = null;
-          rec.onerror = null;
-          rec.onresult = null;
-          rec.onstart = null;
-          openRecognizer(Ctor, id);
-        }
-      }, 200);
+    const miss = () => {
+      if (handled || listenId.current !== id) return;
+      handled = true;
+      clearTimers();
+      listenRef.current = null;
+      markHearing(false);
+      phaseRef.current = "idle";
+      setMicEnabled(true);
+      sayMissed();
     };
     const deliver = (text) => {
       const heard = String(text || "").trim();
@@ -470,6 +516,7 @@ export default function App() {
       heardDraft.current = heard;
       listenRef.current = null;
       markHearing(false);
+      setMicEnabled(true);
       try {
         rec.stop();
       } catch {
@@ -514,15 +561,26 @@ export default function App() {
         listenRef.current = null;
         markHearing(false);
         phaseRef.current = "idle";
-        if (micState.current !== "pending") setMicNote("De microfoon mag niet.");
+        setMicEnabled(true);
+        setMicNote("De microfoon mag niet.");
         return;
       }
       if (code === "aborted") return;
-      if (!latest.trim()) {
-        keepOpen();
+      if (latest.trim()) {
+        deliver(latest);
         return;
       }
-      deliver(latest);
+      if (code === "no-speech") {
+        miss();
+        return;
+      }
+      handled = true;
+      clearTimers();
+      listenRef.current = null;
+      markHearing(false);
+      phaseRef.current = "idle";
+      setMicEnabled(true);
+      setMicNote("De microfoon doet het niet.");
     };
     rec.onend = () => {
       if (handled || listenId.current !== id) return;
@@ -530,17 +588,19 @@ export default function App() {
         deliver(latest);
         return;
       }
-      keepOpen();
+      miss();
     };
     try {
+      setMicEnabled(false);
       rec.start();
       showListening();
-    } catch {
+    } catch (error) {
       handled = true;
       clearTimers();
       phaseRef.current = "idle";
       markHearing(false);
-      if (micState.current !== "pending") setMicNote("De microfoon mag niet.");
+      setMicEnabled(true);
+      setMicNote(micWasDenied(error) ? "De microfoon mag niet." : "De microfoon doet het niet.");
     }
   }
 
@@ -589,14 +649,13 @@ export default function App() {
         signal: chatSignal()
       });
       if (!response.ok) {
-        const detail = (await response.text()).trim();
-        setMicNote(detail || `Margit gaf ${response.status}.`);
+        setMicNote(dutchBody(await response.text(), "Margit kan nu niet antwoorden."));
         return spokenLine(null, intent, word);
       }
       const data = await response.json().catch(() => ({}));
       return spokenLine(data, intent, word);
-    } catch (error) {
-      setMicNote(error?.message || "Margit kan nu niet antwoorden.");
+    } catch {
+      setMicNote("Margit kan nu niet antwoorden.");
       return spokenLine(null, intent, word);
     }
   }
@@ -647,8 +706,8 @@ export default function App() {
     stopSpeaking();
     const line = await askLine("chat", lineContext("", 0, false, child));
     if (ticket !== flowEpoch.current) return;
-    await speak(line, poseForTurn({ moment: "chat" }));
-    if (ticket !== flowEpoch.current) return;
+    const said = await speak(line, poseForTurn({ moment: "chat" }));
+    if (!said || ticket !== flowEpoch.current) return;
     await beginWord(wordIndex.current);
   }
 
@@ -705,10 +764,10 @@ export default function App() {
     setKeysOpen(false);
     setFlowBoth("hello");
     setAvatarMode("wave");
-    await speak(LINES.greet, poseForTurn({ moment: "greeting" }));
-    if (ticket !== flowEpoch.current) return;
-    await speak(LINES.mood, poseForTurn({ moment: "chat" }));
-    if (ticket !== flowEpoch.current) return;
+    const greeted = await speak(LINES.greet, poseForTurn({ moment: "greeting" }));
+    if (!greeted || ticket !== flowEpoch.current) return;
+    const asked = await speak(LINES.mood, poseForTurn({ moment: "chat" }));
+    if (!asked || ticket !== flowEpoch.current) return;
     setFlowBoth("mood");
     setAvatarMode("idle");
     beginListen();

@@ -4,6 +4,8 @@ import {
   CHAT_TIMEOUT_MS,
   DUTCH_VOICE_LINE,
   calmChatError,
+  dutchBody,
+  playbackWaitMs,
   dutchSpeechRequest,
   isAppleMobile,
   listensAfterReply,
@@ -148,6 +150,11 @@ test("iPhone listens once per tap and still shows a reply", () => {
   );
   assert.equal(calmChatError(new Error("Berichten ontbreken.")), "Berichten ontbreken.");
   assert.ok(CHAT_TIMEOUT_MS >= 1000);
+  assert.ok(playbackWaitMs(13.3650625) > 8000);
+  assert.ok(playbackWaitMs(13.3650625) > 13365);
+  assert.equal(playbackWaitMs(Number.NaN), 70000);
+  assert.equal(dutchBody('{"error":"De stem op deze PC doet het niet."}', "De stem doet het niet."), "De stem op deze PC doet het niet.");
+  assert.equal(dutchBody("Failed to fetch", "De stem doet het niet."), "De stem doet het niet.");
 });
 
 test("the Chrome speech pulse stays off on iPhone", () => {

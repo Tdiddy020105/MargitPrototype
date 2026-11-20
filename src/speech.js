@@ -71,6 +71,26 @@ export function listensAfterReply(nav = globalThis.navigator) {
 
 export const CHAT_TIMEOUT_MS = 45000;
 
+// The hello wav is about 13s. An 8s cutoff resolves while it is still playing,
+// the next line swaps the audio src, and play() rejects.
+export function playbackWaitMs(durationSec) {
+  const seconds = Number(durationSec);
+  if (!Number.isFinite(seconds) || seconds <= 0) return 70000;
+  return Math.ceil(seconds * 1000) + 500;
+}
+
+export function dutchBody(text, fallback) {
+  const raw = String(text || "").trim();
+  if (!raw) return fallback;
+  try {
+    const data = JSON.parse(raw);
+    if (data && typeof data.error === "string" && data.error.trim()) return data.error.trim();
+  } catch {
+    // The body was not JSON.
+  }
+  return fallback;
+}
+
 export function calmChatError(err) {
   const message = String((err && err.message) || "");
   const name = String((err && err.name) || "");
