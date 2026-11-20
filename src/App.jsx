@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import "./App.css";
+import { apiUrl, publicUrl } from "./api.js";
 import MargitFigure from "./MargitFigure.jsx";
 import { CHAT_TIMEOUT_MS, dutchBody, emptyListenShouldRestart, isAppleMobile, playbackWaitMs } from "./speech.js";
 import { hearHelp, hearTooHard, spellingIsRight } from "./games.js";
@@ -16,13 +17,13 @@ import MemorySpel from "./games/MemorySpel.jsx";
 import Woordzoeker from "./games/Woordzoeker.jsx";
 
 const AVATARS = {
-  idle: "/img/Margit%20Idle.png",
-  talk: "/img/Margit%20Talking.png",
-  talking: "/img/Margit%20Talking.png",
-  cheer: "/img/Margit%20Encourage.png",
-  encourage: "/img/Margit%20Encourage.png",
-  wave: "/img/Margit%20Idle.png",
-  celebrate: "/img/Margit%20Celebrate.png"
+  idle: publicUrl("/img/Margit%20Idle.png"),
+  talk: publicUrl("/img/Margit%20Talking.png"),
+  talking: publicUrl("/img/Margit%20Talking.png"),
+  cheer: publicUrl("/img/Margit%20Encourage.png"),
+  encourage: publicUrl("/img/Margit%20Encourage.png"),
+  wave: publicUrl("/img/Margit%20Idle.png"),
+  celebrate: publicUrl("/img/Margit%20Celebrate.png")
 };
 
 const LETTERS = "abcdefghijklmnopqrstuvwxyz".split("");
@@ -269,7 +270,7 @@ export default function App() {
       setMicNote(note);
       if (onDone) onDone(false);
     };
-    fetch("/api/speak", {
+    fetch(apiUrl("/api/speak"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text: line })
@@ -642,7 +643,7 @@ export default function App() {
     const word = context.word || "";
     const child = context.child || "";
     try {
-      const response = await fetch("/api/chat", {
+      const response = await fetch(apiUrl("/api/chat"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

@@ -2,8 +2,9 @@ import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { poseName, resolveClips } from "./clips.js";
+import { publicUrl } from "./api.js";
 
-const MODEL_URL = "/models/margit.glb";
+const MODEL_URL = publicUrl("/models/margit.glb");
 
 export default function Avatar({ pose, listening }) {
   const mountRef = useRef(null);

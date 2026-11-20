@@ -1,12 +1,29 @@
 
 const crypto = require("crypto");
 const fs = require("fs");
+const https = require("https");
 const os = require("os");
 const path = require("path");
 const { spawn } = require("child_process");
 const express = require("express");
 
+const PAGES_ORIGIN = "https://tdiddy020105.github.io";
+
 const app = express();
+app.use((req, res, next) => {
+  if (req.headers.origin === PAGES_ORIGIN) {
+    res.setHeader("Access-Control-Allow-Origin", PAGES_ORIGIN);
+    res.setHeader("Vary", "Origin");
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+    res.setHeader("Access-Control-Max-Age", "86400");
+  }
+  if (req.method === "OPTIONS") {
+    res.sendStatus(204);
+    return;
+  }
+  next();
+});
 app.use(express.json({ limit: "32kb" }));
 
 const SPEAK_DIR = path.join(os.tmpdir(), "margit-speak");
@@ -320,6 +337,24 @@ app.post("/api/chat", async (req, res) => {
   }
 });
 
-app.listen(3001, "127.0.0.1", () => {
-  console.log("Margit server draait op http://127.0.0.1:3001");
-});
+const keyPath = path.join(__dirname, "certs", "dev-key.pem");
+const certPath = path.join(__dirname, "certs", "dev-cert.pem");
+const hasCert = fs.existsSync(keyPath) && fs.existsSync(certPath);
+
+if (hasCert) {
+  https
+    .createServer(
+      {
+        key: fs.readFileSync(keyPath),
+        cert: fs.readFileSync(certPath)
+      },
+      app
+    )
+    .listen(3001, "0.0.0.0", () => {
+      console.log("Margit server draait op https://0.0.0.0:3001");
+    });
+} else {
+  app.listen(3001, "0.0.0.0", () => {
+    console.log("Margit server draait op http://0.0.0.0:3001");
+  });
+}

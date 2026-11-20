@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from "react";
+import { publicUrl } from "./api.js";
 
 const THREE_URL = "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js";
 const LOADER_URL = "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/loaders/GLTFLoader.js";
-const MODEL_URLS = ["/models/margit.glb", "/img/margit.glb"];
+const MODEL_URLS = [publicUrl("/models/margit.glb"), publicUrl("/img/margit.glb")];
 // talking.glb, motivational.glb, and confusedscratching.glb are the same file.
 // It holds every clip. wave.glb and celebrate.glb are a smaller copy of two of them.
-const ANIM_URL = "/anims/talking.glb";
+const ANIM_URL = publicUrl("/anims/talking.glb");
 
 const CLIP_FOR_MODE = {
   idle: "Idle_3",
