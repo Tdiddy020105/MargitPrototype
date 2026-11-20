@@ -321,7 +321,7 @@ export default function App() {
     return name === "NotAllowedError" || name === "PermissionDeniedError" || name === "SecurityError";
   }
 
-  function listenFromTap() {
+  function requestMic() {
     const media = navigator.mediaDevices;
     if (!media || typeof media.getUserMedia !== "function") {
       denyMic();
@@ -336,12 +336,10 @@ export default function App() {
       denyMic();
       return;
     }
-    beginListen();
     pending
       .then((stream) => {
         micState.current = "allowed";
         stream.getTracks().forEach((track) => track.stop());
-        if (!hearingRef.current && phaseRef.current !== "listening") beginListen();
       })
       .catch((error) => {
         micState.current = "denied";
@@ -362,7 +360,8 @@ export default function App() {
     heardDraft.current = "";
     const id = listenId.current;
     phaseRef.current = "listening";
-    markHearing(false);
+    markHearing(true);
+    setMicNote("Ik luister");
     openRecognizer(Ctor, id);
   }
 
@@ -409,19 +408,42 @@ export default function App() {
     const rec = new Ctor();
     listenRef.current = rec;
     rec.lang = "nl-NL";
-    rec.continuous = false;
+    rec.continuous = true;
     rec.interimResults = true;
     rec.maxAlternatives = 1;
 
     let handled = false;
     let latest = "";
     let grace = null;
-    let watchdog = null;
+    let restart = null;
     const clearTimers = () => {
       if (grace) clearTimeout(grace);
-      if (watchdog) clearTimeout(watchdog);
+      if (restart) clearTimeout(restart);
       grace = null;
-      watchdog = null;
+      restart = null;
+    };
+    const showListening = () => {
+      markHearing(true);
+      setMicNote("Ik luister");
+    };
+    const keepOpen = () => {
+      if (handled || listenId.current !== id || latest.trim() || restart) return;
+      showListening();
+      restart = window.setTimeout(() => {
+        restart = null;
+        if (handled || listenId.current !== id || latest.trim()) return;
+        try {
+          rec.start();
+        } catch (error) {
+          const message = String((error && error.message) || "");
+          if (/already started|invalidstate/i.test(message)) return;
+          rec.onend = null;
+          rec.onerror = null;
+          rec.onresult = null;
+          rec.onstart = null;
+          openRecognizer(Ctor, id);
+        }
+      }, 200);
     };
     const deliver = (text) => {
       const heard = String(text || "").trim();
@@ -439,16 +461,6 @@ export default function App() {
       takePhrase(heard);
       return true;
     };
-    const close = () => {
-      if (handled || listenId.current !== id) return;
-      if (deliver(latest)) return;
-      handled = true;
-      clearTimers();
-      heardDraft.current = "";
-      listenRef.current = null;
-      markHearing(false);
-      sayMissed();
-    };
     rec.onstart = () => {
       if (handled || listenId.current !== id) return;
       markHearing(true);
@@ -465,7 +477,16 @@ export default function App() {
       }
       latest = `${finalText}${interim}`.trim();
       heardDraft.current = latest;
-      if (finalText.trim()) deliver(finalText);
+      if (!latest) return;
+      if (finalText.trim()) {
+        deliver(finalText);
+        return;
+      }
+      if (grace) clearTimeout(grace);
+      grace = window.setTimeout(() => {
+        grace = null;
+        if (!handled && listenId.current === id && latest.trim()) deliver(latest);
+      }, 900);
     };
     rec.onerror = (event) => {
       if (handled || listenId.current !== id) return;
@@ -479,46 +500,24 @@ export default function App() {
         if (micState.current !== "pending") setMicNote("De microfoon mag niet.");
         return;
       }
-      if ((code === "aborted" || code === "no-speech") && !latest.trim()) {
-        grace = setTimeout(() => {
-          if (!handled && listenId.current === id) close();
-        }, 400);
+      if (code === "aborted") return;
+      if (!latest.trim()) {
+        keepOpen();
         return;
       }
-      if (code === "aborted" || code === "no-speech" || latest.trim()) {
-        close();
-        return;
-      }
-      handled = true;
-      clearTimers();
-      listenRef.current = null;
-      markHearing(false);
-      phaseRef.current = "idle";
+      deliver(latest);
     };
     rec.onend = () => {
       if (handled || listenId.current !== id) return;
       if (latest.trim()) {
-        close();
+        deliver(latest);
         return;
       }
-      grace = setTimeout(() => {
-        if (!handled && listenId.current === id) close();
-      }, 500);
+      keepOpen();
     };
-    watchdog = setTimeout(() => {
-      if (handled || listenId.current !== id) return;
-      try {
-        rec.stop();
-      } catch {
-        close();
-      }
-      grace = setTimeout(() => {
-        if (!handled && listenId.current === id) close();
-      }, 500);
-    }, isAppleMobile() ? 12000 : 20000);
     try {
       rec.start();
-      markHearing(true);
+      showListening();
     } catch {
       handled = true;
       clearTimers();
@@ -536,25 +535,22 @@ export default function App() {
     if (!startedRef.current) {
       setAvatarMode("wave");
       setMicNote(mutedRef.current ? "De stem staat uit." : "Hoi! Ik ben Margit.");
-      listenFromTap();
+      requestMic();
       beginSession();
       return;
     }
-    if (flowRef.current === "hello") {
-      listenFromTap();
-      return;
-    }
-    if (flowRef.current === "mood") bump();
-    stopSpeaking();
+    if (flowRef.current === "hello") return;
     const text = heardDraft.current.trim();
     const busy = hearingRef.current || phaseRef.current === "listening";
     if (busy && text) {
+      stopSpeaking();
       stopListening();
       takePhrase(text);
       return;
     }
-    if (busy) stopListening();
-    listenFromTap();
+    if (busy) return;
+    requestMic();
+    beginListen();
   }
 
   async function askLine(intent, context) {
@@ -699,6 +695,7 @@ export default function App() {
     if (ticket !== flowEpoch.current) return;
     setFlowBoth("mood");
     setAvatarMode("idle");
+    beginListen();
   }
 
   function beginSession() {
@@ -853,7 +850,7 @@ export default function App() {
                     onClick={onMic}
                     aria-pressed={hearing}
                   >
-                    {hearing ? "Ik luister…" : "Praat met Margit"}
+                    {hearing ? "Ik luister" : "Praat met Margit"}
                   </button>
                 </div>
               )}
