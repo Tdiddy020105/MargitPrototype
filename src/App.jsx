@@ -589,17 +589,7 @@ export default function App() {
         deliver(latest);
         return;
       }
-      if (code === "no-speech") {
-        onEmpty();
-        return;
-      }
-      handled = true;
-      clearTimers();
-      listenRef.current = null;
-      markHearing(false);
-      phaseRef.current = "idle";
-      setMicEnabled(true);
-      setMicNote("De microfoon doet het niet.");
+      onEmpty();
     };
     rec.onend = () => {
       if (handled || listenId.current !== id) return;
@@ -613,12 +603,17 @@ export default function App() {
       rec.start();
       showListening();
     } catch (error) {
-      handled = true;
-      clearTimers();
-      phaseRef.current = "idle";
-      markHearing(false);
-      setMicEnabled(true);
-      setMicNote(micWasDenied(error) ? "De microfoon mag niet." : "De microfoon doet het niet.");
+      if (micWasDenied(error)) {
+        handled = true;
+        clearTimers();
+        phaseRef.current = "idle";
+        markHearing(false);
+        setMicEnabled(true);
+        setMicNote("De microfoon mag niet.");
+        return;
+      }
+      showListening();
+      onEmpty();
     }
   }
 

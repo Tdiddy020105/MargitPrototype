@@ -1,10 +1,11 @@
-// GitHub Pages is static. Chat and speech stay on the PC.
-// Dev uses the Vite /api proxy. The built page calls the PC over Tailscale.
+// The iPad page is the Vite server on this PC. /api stays on that same origin.
+// Only the GitHub Pages host calls the PC API on port 3001.
 const PC_API = "https://desktop-u5mu3qu.tail4ac3fe.ts.net:3001";
 
 export function apiUrl(path) {
   const suffix = path.startsWith("/") ? path : `/${path}`;
-  if (import.meta.env.DEV) return suffix;
+  const host = typeof location !== "undefined" ? location.hostname : "";
+  if (import.meta.env.DEV || !host.endsWith("github.io")) return suffix;
   return `${PC_API}${suffix}`;
 }
 
