@@ -61,12 +61,22 @@ export function resolveClips(clips) {
   return found;
 }
 
-const TALKING = new Set(["mistake", "too-hard", "help", "chat", "start-game"]);
+const TALKING = new Set([
+  "mistake",
+  "too-hard",
+  "hard",
+  "help",
+  "chat",
+  "start-game",
+  "offer",
+  "spell"
+]);
 
 export function poseForTurn({ moment, spelling = false } = {}) {
-  if (spelling) return "idle";
-  if (moment === "greeting") return "wave";
   if (moment === "success") return "cheer";
+  if (moment === "greeting") return "wave";
+  if (moment === "listen" || moment === "spell-wait") return "idle";
   if (TALKING.has(moment)) return "talk";
+  if (spelling) return "idle";
   return "idle";
 }

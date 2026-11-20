@@ -60,11 +60,17 @@ test("a right answer cheers, and a mistake does not cheer or scratch", () => {
   }
 });
 
-test("spelling stays idle, including over a success or a mistake", () => {
-  assert.equal(poseForTurn({ moment: "success", spelling: true }), "idle");
-  assert.equal(poseForTurn({ moment: "mistake", spelling: true }), "idle");
-  assert.equal(poseForTurn({ moment: "too-hard", spelling: true }), "idle");
+test("waiting to spell stays idle, and the answer picks the clip", () => {
   assert.equal(poseForTurn({ spelling: true }), "idle");
+  assert.equal(poseForTurn({ moment: "spell-wait" }), "idle");
+  assert.equal(poseForTurn({ moment: "listen" }), "idle");
+  assert.equal(poseForTurn({ moment: "success" }), "cheer");
+  assert.notEqual(poseForTurn({ moment: "success" }), "victory");
+  assert.equal(poseForTurn({ moment: "mistake" }), "talk");
+  assert.equal(poseForTurn({ moment: "offer" }), "talk");
+  assert.notEqual(poseForTurn({ moment: "mistake" }), "cheer");
+  assert.notEqual(poseForTurn({ moment: "mistake" }), "victory");
+  assert.notEqual(poseForTurn({ moment: "mistake" }), "confused");
 });
 
 test("an unknown moment waits", () => {

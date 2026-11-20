@@ -10,9 +10,13 @@ const ANIM_URL = "/anims/talking.glb";
 const CLIP_FOR_MODE = {
   idle: "Idle_3",
   talking: "Talk_with_Hands_Open",
+  talk: "Talk_with_Hands_Open",
   encourage: "Motivational_Cheer",
+  cheer: "Motivational_Cheer",
   celebrate: "Victory_Cheer",
+  victory: "Victory_Cheer",
   think: "Confused_Scratch",
+  confused: "Confused_Scratch",
   wave: "Wave_One_Hand",
   walk: "Walking"
 };
