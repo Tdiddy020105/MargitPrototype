@@ -54,13 +54,6 @@ function speechSupported() {
   );
 }
 
-function recognitionSupported() {
-  return (
-    typeof window !== "undefined" &&
-    Boolean(window.SpeechRecognition || window.webkitSpeechRecognition)
-  );
-}
-
 function chatSignal() {
   if (typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function") {
     return AbortSignal.timeout(CHAT_TIMEOUT_MS);
@@ -127,6 +120,7 @@ export default function App() {
   const helpAsked = useRef(false);
   const flowEpoch = useRef(0);
   const startedRef = useRef(false);
+  const tapStamp = useRef(0);
   const beginSessionRef = useRef(() => {});
   const speakDone = useRef(null);
   const mutedRef = useRef(false);
@@ -144,8 +138,6 @@ export default function App() {
   const speakReplyRef = useRef(() => false);
   const replyEpoch = useRef(0);
   const speechOk = speechSupported();
-  const canListen = recognitionSupported();
-
   const showKeys = flow === "spell" && keysOpen && !game;
 
   function setFlowBoth(next) {
@@ -221,12 +213,6 @@ export default function App() {
       synth.cancel();
     };
   }, [speechOk]);
-
-  useEffect(() => {
-    const arm = () => beginSessionRef.current();
-    window.addEventListener("pointerdown", arm, true);
-    return () => window.removeEventListener("pointerdown", arm, true);
-  }, []);
 
   function haltRecognition() {
     listenId.current += 1;
@@ -308,10 +294,6 @@ export default function App() {
     if (!speechOk || mutedRef.current || !text.trim()) return false;
     const synth = window.speechSynthesis;
     const voice = currentVoice();
-    if (!voice) {
-      pendingSpeak.current = { text, mode, onDone, epoch };
-      return false;
-    }
     if (epoch !== replyEpoch.current) return false;
     pendingSpeak.current = null;
 
@@ -325,12 +307,14 @@ export default function App() {
     if (shouldCancel) synth.cancel();
 
     const utterance = new SpeechSynthesisUtterance(text);
-    try {
-      utterance.voice = voice;
-    } catch {
-      return false;
-    }
     utterance.lang = "nl-NL";
+    if (voice) {
+      try {
+        utterance.voice = voice;
+      } catch {
+        // Speak with the device voice. A rejected voice must not drop the line.
+      }
+    }
 
     let started = false;
     let finished = false;
@@ -348,34 +332,46 @@ export default function App() {
       if (finished || speakId.current !== id) return;
       started = true;
       setAvatarMode(mode);
+      if (flowRef.current === "hello") setMicNote("");
     };
     utterance.onend = finish;
-    utterance.onerror = finish;
+    utterance.onerror = () => {
+      if (!started) setMicNote("Hoi! Ik ben Margit.");
+      finish();
+    };
 
     const delay = shouldCancel ? (isAppleMobile() ? 160 : 60) : 0;
-    speakTimer.current = setTimeout(() => {
-      if (speakId.current !== id || mutedRef.current) return;
+    const say = () => {
+      if (speakId.current !== id || mutedRef.current) {
+        if (mutedRef.current) setMicNote("De stem staat uit.");
+        finish();
+        return;
+      }
       setAvatarMode(mode);
       try {
         synth.resume();
         synth.speak(utterance);
       } catch {
+        setMicNote("Hoi! Ik ben Margit.");
         finish();
         return;
       }
       giveUp = window.setTimeout(() => {
         if (speakId.current !== id || finished || started) return;
-        if (synth.speaking) {
+        if (synth.speaking || synth.pending) {
           started = true;
           return;
         }
+        setMicNote("Hoi! Ik ben Margit.");
         finish();
       }, 1200);
       cap = window.setTimeout(() => {
         if (speakId.current !== id || finished) return;
         finish();
       }, Math.min(24000, 2500 + text.length * 90));
-    }, delay);
+    };
+    if (delay > 0) speakTimer.current = setTimeout(say, delay);
+    else say();
     return true;
   }
 
@@ -557,12 +553,13 @@ export default function App() {
     rec.onerror = (event) => {
       if (handled || listenId.current !== id) return;
       const code = event.error || "";
-      if (code === "not-allowed" && flowRef.current === "mood") {
+      if (code === "not-allowed" && (flowRef.current === "mood" || flowRef.current === "hello")) {
         handled = true;
         clearTimers();
         listenRef.current = null;
         markHearing(false);
         phaseRef.current = "idle";
+        setMicNote("Tik nog eens. Dan luister ik.");
         return;
       }
       if ((code === "aborted" || code === "no-speech") && !latest.trim()) {
@@ -606,7 +603,9 @@ export default function App() {
     try {
       rec.start();
       markHearing(true);
-      setMicNote("");
+      setMicNote((current) =>
+        current === "Hoi! Ik ben Margit." || current === "De stem staat uit." ? current : ""
+      );
     } catch {
       handled = true;
       clearTimers();
@@ -617,7 +616,17 @@ export default function App() {
   }
 
   function onMic() {
-    if (!startedRef.current) {
+    const now = Date.now();
+    if (now - tapStamp.current < 450) return;
+    tapStamp.current = now;
+    const engine = speechOk ? window.speechSynthesis : null;
+    const sayingHello =
+      flowRef.current === "hello" && Boolean(engine && (engine.speaking || engine.pending));
+    if (!startedRef.current || (flowRef.current === "hello" && !sayingHello)) {
+      if (startedRef.current) stopSpeaking();
+      startedRef.current = false;
+      setAvatarMode("wave");
+      setMicNote(mutedRef.current ? "De stem staat uit." : "Hoi! Ik ben Margit.");
       beginSession();
       return;
     }
@@ -767,7 +776,6 @@ export default function App() {
   function beginSession() {
     if (startedRef.current || flowRef.current === "pause") return;
     startedRef.current = true;
-    unlockSpeech();
     runHello();
   }
 
@@ -910,8 +918,8 @@ export default function App() {
                   <button
                     type="button"
                     className="listen"
+                    onPointerUp={onMic}
                     onClick={onMic}
-                    disabled={!canListen}
                     aria-pressed={hearing}
                   >
                     {hearing ? "Ik luister…" : "Praat met Margit"}
