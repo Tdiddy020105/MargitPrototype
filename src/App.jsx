@@ -103,7 +103,9 @@ export default function App() {
   const micState = useRef("unknown");
   const micStream = useRef(null);
   const micAsk = useRef(null);
+  const micOnce = useRef(false);
   const listenRef = useRef(null);
+  const recognizerRef = useRef(null);
   const listenId = useRef(0);
   const hearingRef = useRef(false);
   const phaseRef = useRef("idle");
@@ -389,6 +391,12 @@ export default function App() {
   }
 
   function askMicOnce() {
+    if (micOnce.current) {
+      if (micState.current === "allowed") return Promise.resolve(true);
+      if (micAsk.current) return micAsk.current;
+      return Promise.resolve(micState.current === "allowed");
+    }
+    micOnce.current = true;
     if (micState.current === "allowed") return Promise.resolve(true);
     if (micState.current === "denied") return Promise.resolve(false);
     if (micAsk.current) return micAsk.current;
@@ -479,7 +487,8 @@ export default function App() {
 
   function openRecognizer(Ctor, id) {
     if (listenId.current !== id || phaseRef.current !== "listening") return;
-    const rec = new Ctor();
+    const rec = recognizerRef.current || new Ctor();
+    recognizerRef.current = rec;
     listenRef.current = rec;
     rec.lang = "nl-NL";
     rec.continuous = true;
@@ -490,6 +499,7 @@ export default function App() {
     let latest = "";
     let grace = null;
     let restarting = false;
+    let attempts = 0;
     const clearTimers = () => {
       if (grace) clearTimeout(grace);
       grace = null;
@@ -498,13 +508,31 @@ export default function App() {
       markHearing(true);
       setMicNote("Ik luister");
     };
+    const giveUp = (note) => {
+      if (handled) return;
+      handled = true;
+      clearTimers();
+      markHearing(false);
+      phaseRef.current = "idle";
+      setMicEnabled(true);
+      setMicNote(note);
+      try {
+        rec.stop();
+      } catch {
+        // The listen is already closed.
+      }
+    };
     const onEmpty = () => {
       if (handled || listenId.current !== id || restarting) return;
       if (latest.trim()) {
         deliver(latest);
         return;
       }
-      if (!emptyListenShouldRestart()) return;
+      if (!emptyListenShouldRestart(attempts)) {
+        giveUp("Ik hoorde je niet.");
+        return;
+      }
+      attempts += 1;
       restarting = true;
       showListening();
       window.setTimeout(() => {
@@ -519,11 +547,7 @@ export default function App() {
         } catch (error) {
           const message = String((error && error.message) || "");
           if (/already started/i.test(message)) return;
-          rec.onend = null;
-          rec.onerror = null;
-          rec.onresult = null;
-          rec.onstart = null;
-          openRecognizer(Ctor, id);
+          giveUp(micWasDenied(error) ? "De microfoon mag niet." : "Ik hoorde je niet.");
         }
       }, 200);
     };
@@ -604,12 +628,7 @@ export default function App() {
       showListening();
     } catch (error) {
       if (micWasDenied(error)) {
-        handled = true;
-        clearTimers();
-        phaseRef.current = "idle";
-        markHearing(false);
-        setMicEnabled(true);
-        setMicNote("De microfoon mag niet.");
+        giveUp("De microfoon mag niet.");
         return;
       }
       showListening();

@@ -79,9 +79,9 @@ export function playbackWaitMs(durationSec) {
   return Math.ceil(seconds * 1000) + 500;
 }
 
-// iPad Chrome ends a session with no words immediately. That is not a miss.
-export function emptyListenShouldRestart() {
-  return true;
+// One empty end may restart the same recognizer. A second empty end stops.
+export function emptyListenShouldRestart(attempts) {
+  return Number(attempts) < 1;
 }
 
 export function dutchBody(text, fallback) {
