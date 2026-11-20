@@ -52,12 +52,13 @@ function startViewer(THREE, GLTFLoader, host, modeRef, onReady) {
   const clock = new THREE.Clock();
 
   function resize() {
-    const width = host.clientWidth || host.parentElement?.clientWidth || 320;
-    const viewHeight = host.clientHeight || 560;
+    const width = host.clientWidth || host.parentElement?.clientWidth || 0;
+    const viewHeight = host.clientHeight || 0;
     if (!width || !viewHeight) return;
     camera.aspect = width / viewHeight;
     camera.updateProjectionMatrix();
-    renderer.setSize(width, viewHeight, false);
+    renderer.setSize(width, viewHeight, true);
+    renderer.domElement.style.pointerEvents = "none";
   }
 
   function fitCamera() {
@@ -134,7 +135,8 @@ function startViewer(THREE, GLTFLoader, host, modeRef, onReady) {
       lastW = width;
       lastH = viewHeight;
       camera.aspect = width / viewHeight;
-      renderer.setSize(width, viewHeight, false);
+      renderer.setSize(width, viewHeight, true);
+      renderer.domElement.style.pointerEvents = "none";
       fitCamera();
     }
 

@@ -857,7 +857,7 @@ export default function App() {
     <div className="tablet">
       <div className="screen">
         <div className="app">
-          <div className="stage">
+          <div className={showKeys ? "stage spelling" : "stage"}>
             <div className="presence">
               <div className="intro">
                 <div className="voice">

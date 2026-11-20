@@ -168,7 +168,9 @@ input {
   position: absolute;
   inset: 0;
   z-index: 1;
-  min-height: 52dvh;
+  height: 100%;
+  max-height: 100%;
+  overflow: hidden;
   pointer-events: none;
 }
 
@@ -951,11 +953,13 @@ form button:disabled:hover {
 
 @media (max-width: 1200px), (max-height: 680px) {
   .stage:has(.spell) .presence {
-    flex: 1 1 0;
-    min-height: 0;
-    max-height: none;
+    flex: 1 1 auto;
+    min-height: 200px;
+    max-height: min(36dvh, calc(100dvh - 490px));
     overflow: hidden;
     padding-bottom: 8px;
+    pointer-events: none;
+    clip-path: inset(0);
   }
 
   .stage:has(.spell) .avatar,
@@ -964,22 +968,81 @@ form button:disabled:hover {
     flex: 1 1 auto;
     flex-shrink: 1;
     height: 100%;
-    min-height: 0;
+    min-height: 180px;
     max-height: 100%;
+    overflow: hidden;
+    pointer-events: none;
   }
 
   .stage:has(.spell) .figure-view,
   .stage:has(.spell) .figure-view canvas {
+    min-height: 0;
     pointer-events: none;
   }
 
   .stage:has(.spell) .talk,
   .stage:has(.spell) .spell,
-  .stage:has(.spell) .converse {
+  .stage:has(.spell) .converse,
+  .stage:has(.spell) .keys,
+  .stage:has(.spell) .key {
     position: relative;
-    z-index: 8;
+    z-index: 40;
     flex: 0 0 auto;
+    pointer-events: auto;
   }
+}
+
+.stage.spelling {
+  overflow: hidden;
+}
+
+.stage.spelling .presence {
+  flex: 1 1 auto;
+  min-height: 200px;
+  max-height: min(36dvh, calc(100dvh - 490px));
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 1;
+  clip-path: inset(0);
+}
+
+.stage.spelling .avatar {
+  min-height: 180px;
+  max-height: 100%;
+  height: 100%;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.stage.spelling .avatar img,
+.stage.spelling .figure-view,
+.stage.spelling .figure-view canvas {
+  min-height: 0;
+  max-height: 100%;
+  height: 100%;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.stage.spelling .talk {
+  flex: 0 0 auto;
+  margin-top: auto;
+  position: relative;
+  z-index: 40;
+  pointer-events: auto;
+  background: #f6f1e8;
+  transform: translateZ(0);
+}
+
+.stage.spelling .spell,
+.stage.spelling .keys,
+.stage.spelling .key,
+.stage.spelling .spell-send,
+.stage.spelling .converse,
+.stage.spelling .listen {
+  position: relative;
+  z-index: 41;
+  pointer-events: auto;
 }
 
 .choices,
