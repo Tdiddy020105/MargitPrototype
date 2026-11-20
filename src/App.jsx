@@ -635,7 +635,7 @@ export default function App() {
           messages: [
             {
               role: "user",
-              content: `Bedoeling: ${intent}. Woord: ${word}. Het kind zei: ${context.child || ""}. Zeg alleen de Nederlandse zin.`
+              content: `Bedoeling: ${intent}. Woord: ${word}. Hij zei: ${context.child || ""}. Eén vriendelijke Nederlandse zin, zoals "Hoi! Wat leuk dat je er bent!". Zeg niet "hé kind" of "hey kind".`
             }
           ]
         }),

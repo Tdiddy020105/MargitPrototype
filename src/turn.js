@@ -11,7 +11,7 @@ export const LINES = {
   help: "Ik help je wel! Luister eens goed naar de eerste klank.",
   hard: "Dat geeft helemaal niet. Misschien kunnen we iets anders proberen.",
   offer: "Dit is een lastig woord. Kies maar: memory, woordzoeker of één letter anders.",
-  chat: "Wat fijn. Zullen we een woord spellen?"
+  chat: "Hoi! Wat leuk dat je er bent!"
 };
 
 const INTENTS = ["praise", "mistake", "help", "hard", "offer", "spell", "chat"];
@@ -61,6 +61,10 @@ function counsels(line) {
   );
 }
 
+function weirdGreeting(line) {
+  return /\b(he|hey|hee) kind\b/.test(fold(line));
+}
+
 export function acceptLine(text, intent, word) {
   const line = String(text || "")
     .replace(/<think>[\s\S]*?<\/think>/gi, "")
@@ -69,7 +73,7 @@ export function acceptLine(text, intent, word) {
     .trim();
   if (!line || line.length > 280) return null;
   if (/[{}<>]|\bintent\b|\bjson\b/i.test(line)) return null;
-  if (counsels(line)) return null;
+  if (counsels(line) || weirdGreeting(line)) return null;
   const sentences = line.split(/(?<=[.!?])\s+/).filter(Boolean);
   if (sentences.length > 3) return null;
   if ((intent === "mistake" || intent === "help" || intent === "hard" || intent === "praise") && mentionsWord(line, word)) {

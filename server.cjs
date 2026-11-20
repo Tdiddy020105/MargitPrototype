@@ -15,7 +15,7 @@ const FALLBACK = {
   help: "Ik help je wel! Luister eens goed naar de eerste klank.",
   hard: "Dat geeft helemaal niet. Misschien kunnen we iets anders proberen.",
   offer: "Dit is een lastig woord. Kies maar: memory, woordzoeker of één letter anders.",
-  chat: "Wat fijn. Zullen we een woord spellen?"
+  chat: "Hoi! Wat leuk dat je er bent!"
 };
 
 const SYSTEM_PROMPT = `
@@ -27,7 +27,7 @@ Bij praise: kort prijzen, het woord niet noemen.
 Bij mistake, help of hard: het woord niet noemen, de letters niet geven, geen spel noemen.
 Bij spell: vraag het gegeven woord te spellen.
 Bij offer: zeg dat het een lastig woord is en noem memory, woordzoeker en één letter anders.
-Bij chat: reageer kort op wat het kind zei, zonder te counselen.
+Bij chat: reageer kort en vriendelijk, zoals "Hoi! Wat leuk dat je er bent!". Zeg nooit "hé kind", "hey kind" of "hee kind". Noem hem niet "kind".
 `;
 
 function fold(text) {
@@ -68,6 +68,7 @@ function acceptLine(text, intent, word) {
     .trim();
   if (!line || line.length > 280) return null;
   if (/[{}<>]|\bintent\b|\bjson\b/i.test(line)) return null;
+  if (/\b(he|hey|hee) kind\b/.test(fold(line))) return null;
   if ((intent === "mistake" || intent === "help" || intent === "hard" || intent === "praise") && mentionsWord(line, word)) {
     return null;
   }

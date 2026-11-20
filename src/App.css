@@ -921,6 +921,20 @@ form button:disabled:hover {
   }
 }
 
+@media (max-width: 1200px), (max-height: 680px) {
+  .stage:has(.spell) .presence {
+    flex: 1 1 auto;
+    min-height: 48dvh;
+  }
+
+  .stage:has(.spell) .avatar {
+    flex: 1 1 auto;
+    flex-shrink: 0;
+    min-height: 48dvh;
+    max-height: none;
+  }
+}
+
 .choices,
 .pause-panel {
   display: flex;

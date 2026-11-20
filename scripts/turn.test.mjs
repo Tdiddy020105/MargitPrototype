@@ -37,6 +37,10 @@ test("raw model text cannot choose the activity or reveal the word", () => {
   );
   assert.equal(spokenLine({ reply: "nog eens" }, "spell", "boom"), spellLine("boom"));
   assert.equal(spokenLine(null, "praise", "boom"), LINES.praise);
+  assert.equal(spokenLine({ reply: "Hé kind, hoe gaat het?" }, "chat", ""), LINES.chat);
+  assert.equal(acceptLine("Hey kind!", "chat", ""), null);
+  assert.match(LINES.greet, /^Hoi! Wat leuk dat je er bent!/);
+  assert.match(LINES.chat, /^Hoi! Wat leuk dat je er bent!/);
   assert.equal(acceptLine("Ja! Helemaal goed. Knap gedaan!", "praise", "boom"), LINES.praise);
   assert.equal(fallbackLine("help"), LINES.help);
 });
