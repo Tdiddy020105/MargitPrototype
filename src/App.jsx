@@ -35,16 +35,8 @@ const AVATARS = {
 
 const LETTERS = "abcdefghijklmnopqrstuvwxyz".split("");
 
-function voiceName(voice) {
-  return (voice.name || "").toLowerCase();
-}
-
 function chooseVoice(voices) {
-  const list = voices || [];
-  const fenna = list.find(
-    (voice) => voiceLangIsDutch(voice.lang) && voiceName(voice).includes("fenna")
-  );
-  return fenna || pickDutchVoice(list);
+  return pickDutchVoice(voices || []);
 }
 
 function speechSupported() {
@@ -195,7 +187,16 @@ export default function App() {
       const chosen = chooseVoice(voices);
       setFemaleVoice(Boolean(chosen));
       setVoicesReady(true);
-      if (!chosen || mutedRef.current) return;
+      if (!chosen || mutedRef.current) {
+        if (!chosen && pendingSpeak.current) {
+          try {
+            synth.cancel();
+          } catch {
+            // Drop a queued English utterance. There is no Dutch voice yet.
+          }
+        }
+        return;
+      }
       const job = pendingSpeak.current;
       if (!job || job.epoch !== replyEpoch.current) return;
       pendingSpeak.current = null;
@@ -297,20 +298,23 @@ export default function App() {
     const voice = currentVoice();
     if (epoch !== replyEpoch.current) return false;
     if (!voice || !voiceLangIsDutch(voice.lang)) {
+      try {
+        synth.cancel();
+      } catch {
+        // Drop a queued English utterance.
+      }
       pendingSpeak.current = { text, mode, onDone, epoch };
       setMicNote(text.trim());
       return false;
     }
     pendingSpeak.current = null;
 
-    const shouldCancel = speakId.current > 0;
     const id = speakId.current + 1;
     speakId.current = id;
     if (speakTimer.current) {
       clearTimeout(speakTimer.current);
       speakTimer.current = null;
     }
-    if (shouldCancel) synth.cancel();
 
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.lang = "nl-NL";
@@ -340,38 +344,64 @@ export default function App() {
       finish();
     };
 
-    const delay = shouldCancel ? (isAppleMobile() ? 160 : 60) : 0;
     const say = () => {
       if (speakId.current !== id || mutedRef.current) {
         if (mutedRef.current) setMicNote("De stem staat uit.");
         finish();
         return;
       }
-      setAvatarMode(mode);
       try {
-        if (needsChromePulse()) synth.resume();
-        synth.speak(utterance);
+        synth.cancel();
       } catch {
+        // Drop whatever the default English voice already queued.
+      }
+      const fresh = chooseVoice(synth.getVoices());
+      if (!fresh || !voiceLangIsDutch(fresh.lang)) {
+        pendingSpeak.current = { text, mode, onDone, epoch };
         setMicNote(text.trim());
-        finish();
         return;
       }
-      giveUp = window.setTimeout(() => {
-        if (speakId.current !== id || finished || started) return;
-        if (synth.speaking || synth.pending) {
-          started = true;
+      utterance.lang = "nl-NL";
+      utterance.voice = fresh;
+      setAvatarMode(mode);
+      const start = () => {
+        if (speakId.current !== id || mutedRef.current) return;
+        const again = chooseVoice(synth.getVoices());
+        if (!again || !voiceLangIsDutch(again.lang)) {
+          pendingSpeak.current = { text, mode, onDone, epoch };
+          setMicNote(text.trim());
           return;
         }
-        setMicNote(text.trim());
-        finish();
-      }, 1200);
-      cap = window.setTimeout(() => {
-        if (speakId.current !== id || finished) return;
-        finish();
-      }, Math.min(24000, 2500 + text.length * 90));
+        utterance.voice = again;
+        try {
+          if (needsChromePulse()) synth.resume();
+          synth.speak(utterance);
+        } catch {
+          setMicNote(text.trim());
+          finish();
+          return;
+        }
+        giveUp = window.setTimeout(() => {
+          if (speakId.current !== id || finished || started) return;
+          if (synth.speaking || synth.pending) {
+            started = true;
+            return;
+          }
+          setMicNote(text.trim());
+          finish();
+        }, 1200);
+        cap = window.setTimeout(() => {
+          if (speakId.current !== id || finished) return;
+          finish();
+        }, Math.min(24000, 2500 + text.length * 90));
+      };
+      if (isAppleMobile()) {
+        speakTimer.current = setTimeout(start, 160);
+        return;
+      }
+      start();
     };
-    if (delay > 0) speakTimer.current = setTimeout(say, delay);
-    else say();
+    say();
     return true;
   }
 

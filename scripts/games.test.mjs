@@ -94,6 +94,12 @@ test("speech stays silent without a Dutch voice and keeps nl-NL", () => {
   const flemish = { lang: "nl_BE", name: "Saskia" };
   assert.equal(pickDutchVoice([xander]).name, "Xander");
   assert.equal(pickDutchVoice([english, xander, flemish]).name, "Saskia");
+  const claire = { lang: "nl-NL", name: "Claire" };
+  const ellen = { lang: "nl-BE", name: "Ellen" };
+  assert.equal(pickDutchVoice([english, flemish, claire]).name, "Claire");
+  assert.equal(pickDutchVoice([english, flemish, ellen]).name, "Ellen");
+  assert.equal(pickDutchVoice([{ lang: "en-US", name: "Claire" }]), null);
+  assert.equal(pickDutchVoice([{ lang: "en-GB", name: "Ellen" }]), null);
   assert.deepEqual(dutchSpeechRequest("Hoi", xander), {
     text: "Hoi",
     lang: "nl-NL",

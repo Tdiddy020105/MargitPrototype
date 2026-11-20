@@ -29,12 +29,15 @@ export function voiceLangIsDutch(lang) {
 
 export function pickDutchVoice(voices) {
   const dutch = (voices || []).filter((voice) => voiceLangIsDutch(voice?.lang));
-  const female = dutch.find((voice) =>
-    /female|vrouw|saskia|claire|ellen|femma|lisa|hanna|naomi|femke|linda/i.test(voice.name)
+  const named = (pattern) => dutch.find((voice) => pattern.test(voice?.name || ""));
+  return (
+    named(/claire/i) ||
+    named(/ellen/i) ||
+    named(/female|vrouw|saskia|fenna|femma|lisa|hanna|naomi|femke|linda/i) ||
+    dutch.find((voice) => !/male|xander|frank|bart|david/i.test(voice?.name || "")) ||
+    dutch[0] ||
+    null
   );
-  if (female) return female;
-  const notMale = dutch.find((voice) => !/male|xander|frank|bart|david/i.test(voice.name));
-  return notMale || dutch[0] || null;
 }
 
 export function dutchSpeechRequest(text, voice) {
@@ -168,15 +171,17 @@ export async function speakDutch(text) {
     timer = window.setTimeout(() => finish(false), Math.min(7000, 900 + text.length * 55));
     utter.onend = () => finish(true);
     utter.onerror = () => finish(false);
-    const busy = synth.speaking || synth.pending;
-    if (busy) synth.cancel();
+    try {
+      synth.cancel();
+    } catch {
+      // Drop a queued English utterance before the Dutch voice speaks.
+    }
     const start = () => {
       if (settled || generation !== speakGeneration) return;
       synth.speak(utter);
       if (nudge) synth.resume();
     };
-    delay = busy && !nudge ? window.setTimeout(start, 120) : 0;
-    if (!delay) start();
+    delay = window.setTimeout(start, isAppleMobile() ? 160 : 60);
   });
 }
 
