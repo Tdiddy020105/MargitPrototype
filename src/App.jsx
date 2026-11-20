@@ -5,7 +5,6 @@ import {
   CHAT_TIMEOUT_MS,
   DUTCH_VOICE_LINE,
   isAppleMobile,
-  listensAfterReply,
   pickDutchVoice,
   recognitionSettings,
   voiceLangIsDutch
@@ -558,6 +557,14 @@ export default function App() {
     rec.onerror = (event) => {
       if (handled || listenId.current !== id) return;
       const code = event.error || "";
+      if (code === "not-allowed" && flowRef.current === "mood") {
+        handled = true;
+        clearTimers();
+        listenRef.current = null;
+        markHearing(false);
+        phaseRef.current = "idle";
+        return;
+      }
       if ((code === "aborted" || code === "no-speech") && !latest.trim()) {
         grace = setTimeout(() => {
           if (!handled && listenId.current === id) close();
@@ -610,7 +617,12 @@ export default function App() {
   }
 
   function onMic() {
-    if (flowRef.current === "hello" || flowRef.current === "mood") bump();
+    if (!startedRef.current) {
+      beginSession();
+      return;
+    }
+    if (flowRef.current === "hello") return;
+    if (flowRef.current === "mood") bump();
     stopSpeaking();
     const text = heardDraft.current.trim();
     const busy = hearingRef.current || phaseRef.current === "listening";
@@ -673,9 +685,9 @@ export default function App() {
     const word = SPELL_ORDER[index % SPELL_ORDER.length];
     const line = await askLine("spell", lineContext(word, 0, false));
     if (ticket !== flowEpoch.current) return;
-    setKeysOpen(true);
     await speak(line, poseForTurn({ moment: "spell" }));
     if (ticket !== flowEpoch.current) return;
+    setKeysOpen(true);
     setAvatarMode("idle");
   }
 
@@ -703,9 +715,9 @@ export default function App() {
     if (ticket !== flowEpoch.current) return;
     const again = await askLine("spell", lineContext(word, missesRef.current, true));
     if (ticket !== flowEpoch.current) return;
-    setKeysOpen(true);
     await speak(again, poseForTurn({ moment: "spell" }));
     if (ticket !== flowEpoch.current) return;
+    setKeysOpen(true);
     setAvatarMode("idle");
   }
 
@@ -740,15 +752,16 @@ export default function App() {
 
   async function runHello() {
     const ticket = bump();
+    setKeysOpen(false);
     setFlowBoth("hello");
     setAvatarMode("wave");
-    await speak(LINES.greet, poseForTurn({ moment: "spell" }));
+    await speak(LINES.greet, poseForTurn({ moment: "greeting" }));
     if (ticket !== flowEpoch.current) return;
     await speak(LINES.mood, poseForTurn({ moment: "chat" }));
     if (ticket !== flowEpoch.current) return;
     setFlowBoth("mood");
     setAvatarMode("idle");
-    if (listensAfterReply()) beginListen();
+    beginListen();
   }
 
   function beginSession() {
@@ -797,9 +810,9 @@ export default function App() {
     }
     const again = await askLine("spell", lineContext(word, step.misses, helpAsked.current));
     if (ticket !== flowEpoch.current) return;
-    setKeysOpen(true);
     await speak(again, poseForTurn({ moment: "spell" }));
     if (ticket !== flowEpoch.current) return;
+    setKeysOpen(true);
     setAvatarMode("idle");
   }
 

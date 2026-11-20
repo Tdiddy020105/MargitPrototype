@@ -748,17 +748,27 @@ form button:disabled:hover {
     padding-bottom: max(8px, env(safe-area-inset-bottom, 0px));
   }
 
-  .stage:has(.game) .talk,
-  .stage:has(.spell) .talk {
+  .stage:has(.game) .talk {
     flex: 1 1 auto;
     max-height: none;
   }
 
+  .stage:has(.spell) .talk {
+    flex: 0 0 auto;
+    max-height: none;
+    overflow: visible;
+  }
+
   .stage:has(.game) .presence,
-  .stage:has(.spell) .presence,
   .stage:has(.choices) .presence,
   .stage:has(.pause-panel) .presence {
     flex: 0 1 42%;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .stage:has(.spell) .presence {
+    flex: 1 1 0;
     min-height: 0;
     overflow: hidden;
   }
@@ -773,18 +783,22 @@ form button:disabled:hover {
     overflow: hidden;
   }
 
-  .stage:has(.game) .talk,
-  .stage:has(.spell) .talk {
+  .stage:has(.game) .talk {
     flex: 1 1 auto;
     min-height: 0;
     overflow: hidden;
   }
 
+  .stage:has(.spell) .talk {
+    flex: 0 0 auto;
+    min-height: auto;
+    overflow: visible;
+  }
+
   .stage:has(.spell) .spell {
-    flex: 1 1 auto;
-    min-height: 0;
-    overflow: auto;
-    -webkit-overflow-scrolling: touch;
+    flex: 0 0 auto;
+    min-height: auto;
+    overflow: visible;
   }
 
   .listen,
@@ -932,15 +946,34 @@ form button:disabled:hover {
 
 @media (max-width: 1200px), (max-height: 680px) {
   .stage:has(.spell) .presence {
-    flex: 1 1 auto;
-    min-height: 48dvh;
+    flex: 1 1 0;
+    min-height: 0;
+    max-height: none;
+    overflow: hidden;
+    padding-bottom: 8px;
   }
 
-  .stage:has(.spell) .avatar {
+  .stage:has(.spell) .avatar,
+  .stage:has(.spell) .avatar img,
+  .stage:has(.spell) .figure-view {
     flex: 1 1 auto;
-    flex-shrink: 0;
-    min-height: 48dvh;
-    max-height: none;
+    flex-shrink: 1;
+    height: 100%;
+    min-height: 0;
+    max-height: 100%;
+  }
+
+  .stage:has(.spell) .figure-view,
+  .stage:has(.spell) .figure-view canvas {
+    pointer-events: none;
+  }
+
+  .stage:has(.spell) .talk,
+  .stage:has(.spell) .spell,
+  .stage:has(.spell) .converse {
+    position: relative;
+    z-index: 8;
+    flex: 0 0 auto;
   }
 }
 
