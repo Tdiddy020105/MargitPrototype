@@ -100,6 +100,8 @@ export default function App() {
   const speakId = useRef(0);
   const playerRef = useRef(null);
   const micState = useRef("unknown");
+  const micStream = useRef(null);
+  const micAsk = useRef(null);
   const listenRef = useRef(null);
   const listenId = useRef(0);
   const hearingRef = useRef(false);
@@ -321,27 +323,42 @@ export default function App() {
     return name === "NotAllowedError" || name === "PermissionDeniedError" || name === "SecurityError";
   }
 
+  function liveMic() {
+    const stream = micStream.current;
+    if (!stream) return null;
+    const track = stream.getAudioTracks().find((item) => item.readyState === "live");
+    return track ? stream : null;
+  }
+
   function requestMic() {
+    if (liveMic()) {
+      micState.current = "allowed";
+      return;
+    }
+    if (micAsk.current) return;
     const media = navigator.mediaDevices;
     if (!media || typeof media.getUserMedia !== "function") {
       denyMic();
       return;
     }
+    micState.current = "pending";
     let pending;
     try {
-      micState.current = "pending";
       pending = media.getUserMedia({ audio: true });
     } catch {
       micState.current = "denied";
       denyMic();
       return;
     }
-    pending
+    micAsk.current = pending
       .then((stream) => {
+        micStream.current = stream;
         micState.current = "allowed";
-        stream.getTracks().forEach((track) => track.stop());
+        return stream;
       })
       .catch((error) => {
+        micAsk.current = null;
+        micStream.current = null;
         micState.current = "denied";
         if (micWasDenied(error)) denyMic();
       });
@@ -549,7 +566,6 @@ export default function App() {
       return;
     }
     if (busy) return;
-    requestMic();
     beginListen();
   }
 
