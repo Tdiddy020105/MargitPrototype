@@ -479,7 +479,7 @@ export default function App() {
       pauseForResearch();
       return;
     }
-    if (flowRef.current === "mood") {
+    if (flowRef.current === "hello" || flowRef.current === "mood") {
       replyThenSpell(trimmed);
       return;
     }
@@ -610,7 +610,8 @@ export default function App() {
   }
 
   function onMic() {
-    if (flowRef.current !== "mood" && flowRef.current !== "spell") return;
+    if (flowRef.current === "hello" || flowRef.current === "mood") bump();
+    stopSpeaking();
     const text = heardDraft.current.trim();
     const busy = hearingRef.current || phaseRef.current === "listening";
     if (busy && text) {
@@ -679,7 +680,9 @@ export default function App() {
   }
 
   async function replyThenSpell(child) {
-    const ticket = flowEpoch.current;
+    const ticket = bump();
+    stopListening();
+    stopSpeaking();
     const line = await askLine("chat", lineContext("", 0, false, child));
     if (ticket !== flowEpoch.current) return;
     await speak(line, poseForTurn({ moment: "chat" }));
@@ -827,7 +830,7 @@ export default function App() {
     if (kind === "encourage") speak("Kijk nog eens.", poseForTurn({ moment: "mistake" }));
   }
 
-  const showMic = (flow === "mood" || flow === "spell") && !game;
+  const showMic = !game && (flow === "hello" || flow === "mood" || flow === "spell");
 
   return (
     <div className="tablet">
@@ -898,7 +901,7 @@ export default function App() {
                     disabled={!canListen}
                     aria-pressed={hearing}
                   >
-                    {hearing ? "Ik luister…" : "Zeg het"}
+                    {hearing ? "Ik luister…" : "Praat met Margit"}
                   </button>
                 </div>
               )}

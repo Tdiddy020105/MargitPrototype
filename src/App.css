@@ -278,22 +278,26 @@ form button {
 }
 
 .converse {
+  position: relative;
+  z-index: 6;
   flex: 0 0 auto;
+  width: 100%;
   margin-top: 8px;
-  padding-bottom: env(safe-area-inset-bottom, 0px);
+  padding-bottom: max(12px, env(safe-area-inset-bottom, 0px));
+  background: #f6f1e8;
 }
 
 .listen {
   appearance: none;
   width: 100%;
-  min-height: 56px;
-  padding: 0.7em 1em;
+  min-height: 64px;
+  padding: 0.8em 1em;
   border: 1px solid #1b3f73;
-  border-radius: 18px;
+  border-radius: 20px;
   background: #1b3f73;
   color: #f6f1e8;
   font: inherit;
-  font-size: 20px;
+  font-size: 22px;
   font-weight: 650;
   line-height: 1.2;
   cursor: pointer;
@@ -710,26 +714,30 @@ form button:disabled:hover {
     flex: 1 1 auto;
     height: auto;
     min-height: 0;
-    overflow: auto;
+    overflow: hidden;
+    z-index: 1;
   }
 
   .talk {
     display: flex;
-    flex: 0 1 auto;
+    flex: 0 0 auto;
     flex-direction: column;
     min-height: 0;
-    max-height: 70%;
-    overflow: auto;
+    max-height: none;
+    overflow: visible;
     padding: 0;
     background: #f6f1e8;
-    -webkit-overflow-scrolling: touch;
+    position: relative;
+    z-index: 6;
   }
 
   .converse {
-    position: sticky;
-    bottom: 0;
-    z-index: 2;
+    position: relative;
+    bottom: auto;
+    z-index: 6;
+    flex-shrink: 0;
     background: #f6f1e8;
+    padding-bottom: max(8px, env(safe-area-inset-bottom, 0px));
   }
 
   .stage:has(.game) .talk,
@@ -747,12 +755,13 @@ form button:disabled:hover {
     overflow: hidden;
   }
 
-  .converse {
-    padding-bottom: 0;
-  }
-
   .stage:has(.game) .presence {
     flex: 0 1 38%;
+  }
+
+  .avatar {
+    min-height: 0;
+    overflow: hidden;
   }
 
   .stage:has(.game) .talk,
@@ -873,7 +882,7 @@ form button:disabled:hover {
     display: flex;
     flex-direction: column;
     position: relative;
-    z-index: 2;
+    z-index: 6;
     width: auto;
     margin: 0;
     min-height: 0;
@@ -883,7 +892,9 @@ form button:disabled:hover {
   }
 
   .converse {
-    padding-bottom: 0;
+    z-index: 6;
+    flex-shrink: 0;
+    padding-bottom: max(8px, env(safe-area-inset-bottom, 0px));
   }
 
   .message p {
