@@ -15,6 +15,10 @@ dist-ssr
 public/models/*.glb
 *.local
 
+# Local HTTPS key for the iPad. Not a public certificate.
+certs/*.pem
+certs/*.cnf
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
