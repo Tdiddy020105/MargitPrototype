@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import "./App.css";
 import MargitFigure from "./MargitFigure.jsx";
-import { CHAT_TIMEOUT_MS, isAppleMobile, offerTypedReply, recognitionSettings } from "./speech.js";
+import { CHAT_TIMEOUT_MS, isAppleMobile } from "./speech.js";
 import { hearHelp, hearTooHard, spellingIsRight } from "./games.js";
 import { poseForTurn } from "./clips.js";
 import {
@@ -83,8 +83,6 @@ export default function App() {
   const [spelled, setSpelled] = useState("");
   const [hearing, setHearing] = useState(false);
   const [micNote, setMicNote] = useState("");
-  const [replyOpen, setReplyOpen] = useState(false);
-  const [typed, setTyped] = useState("");
   const [muted, setMuted] = useState(false);
   const [avatarMode, setAvatarMode] = useState("wave");
 
@@ -101,7 +99,7 @@ export default function App() {
   const mutedRef = useRef(false);
   const speakId = useRef(0);
   const playerRef = useRef(null);
-  const replyRef = useRef(null);
+  const micState = useRef("unknown");
   const listenRef = useRef(null);
   const listenId = useRef(0);
   const hearingRef = useRef(false);
@@ -310,12 +308,42 @@ export default function App() {
     });
   }
 
-  function showReply() {
-    if (gameRef.current) return;
-    const now = flowRef.current;
-    if (now === "pause" || now === "offer" || now === "game") return;
-    setReplyOpen(true);
-    setMicNote("Typ je antwoord.");
+  function denyMic() {
+    stopListening();
+    setMicNote("De microfoon mag niet.");
+  }
+
+  function micWasDenied(error) {
+    const name = String((error && error.name) || "");
+    return name === "NotAllowedError" || name === "PermissionDeniedError" || name === "SecurityError";
+  }
+
+  function listenFromTap() {
+    const media = navigator.mediaDevices;
+    if (!media || typeof media.getUserMedia !== "function") {
+      denyMic();
+      return;
+    }
+    let pending;
+    try {
+      micState.current = "pending";
+      pending = media.getUserMedia({ audio: true });
+    } catch {
+      micState.current = "denied";
+      denyMic();
+      return;
+    }
+    beginListen();
+    pending
+      .then((stream) => {
+        micState.current = "allowed";
+        stream.getTracks().forEach((track) => track.stop());
+        if (!hearingRef.current && phaseRef.current !== "listening") beginListen();
+      })
+      .catch((error) => {
+        micState.current = "denied";
+        if (micWasDenied(error)) denyMic();
+      });
   }
 
   function beginListen() {
@@ -323,7 +351,7 @@ export default function App() {
     if (!Ctor) {
       phaseRef.current = "idle";
       markHearing(false);
-      showReply();
+      setMicNote("De microfoon mag niet.");
       return;
     }
     clearListenWait();
@@ -332,32 +360,12 @@ export default function App() {
     const id = listenId.current;
     phaseRef.current = "listening";
     markHearing(false);
-    const apple = isAppleMobile();
-    const kick = () => {
-      if (listenId.current !== id || phaseRef.current !== "listening") return;
-      if (playerIsPlaying() && kick.spins < 40) {
-        kick.spins += 1;
-        listenWait.current = setTimeout(kick, 150);
-        return;
-      }
-      if (playerIsPlaying()) {
-        const audio = playerRef.current;
-        if (audio) audio.pause();
-      }
-      openRecognizer(Ctor, id);
-    };
-    kick.spins = 0;
-    if (apple) {
-      openRecognizer(Ctor, id);
-      return;
-    }
-    listenWait.current = setTimeout(kick, 220);
+    openRecognizer(Ctor, id);
   }
 
   function handleSilence() {
     phaseRef.current = "idle";
     markHearing(false);
-    if (offerTypedReply({ recognizer: true, started: true, transcript: "" })) showReply();
   }
 
   function takePhrase(text) {
@@ -368,8 +376,6 @@ export default function App() {
       return;
     }
     setMicNote("");
-    setReplyOpen(false);
-    setTyped("");
     if (hearSensitive(trimmed)) {
       pauseForResearch();
       return;
@@ -393,32 +399,20 @@ export default function App() {
     if (listenId.current !== id || phaseRef.current !== "listening") return;
     const rec = new Ctor();
     listenRef.current = rec;
-    const settings = recognitionSettings();
     rec.lang = "nl-NL";
-    rec.interimResults = settings.interimResults;
-    rec.continuous = settings.continuous;
+    rec.continuous = false;
+    rec.interimResults = true;
     rec.maxAlternatives = 1;
 
     let handled = false;
-    let engineStarted = false;
     let latest = "";
-    let silence = null;
     let grace = null;
     let watchdog = null;
-    let slow = null;
     const clearTimers = () => {
-      if (silence) clearTimeout(silence);
       if (grace) clearTimeout(grace);
       if (watchdog) clearTimeout(watchdog);
-      if (slow) clearTimeout(slow);
-      silence = null;
       grace = null;
       watchdog = null;
-      slow = null;
-    };
-    const markStarted = () => {
-      engineStarted = true;
-      markHearing(true);
     };
     const close = () => {
       if (handled || listenId.current !== id) return;
@@ -427,32 +421,17 @@ export default function App() {
       heardDraft.current = latest;
       listenRef.current = null;
       markHearing(false);
-      if (latest.trim()) takePhrase(latest);
-      else handleSilence();
-    };
-    const armSilence = () => {
-      if (!settings.continuous) return;
-      if (silence) clearTimeout(silence);
-      silence = setTimeout(() => {
-        if (handled || listenId.current !== id) return;
-        try {
-          rec.stop();
-        } catch {
-          close();
-        }
-        grace = setTimeout(() => {
-          if (!handled && listenId.current === id) close();
-        }, 400);
-      }, 1100);
+      if (latest.trim() && !playerIsPlaying()) takePhrase(latest);
+      else if (!latest.trim()) handleSilence();
+      else phaseRef.current = "idle";
     };
     rec.onstart = () => {
       if (handled || listenId.current !== id) return;
-      markStarted();
-      setMicNote((current) => (current === "Typ je antwoord." ? "" : current));
+      markHearing(true);
     };
     rec.onresult = (event) => {
       if (handled || listenId.current !== id) return;
-      markStarted();
+      markHearing(true);
       let finalText = "";
       let interim = "";
       for (let i = 0; i < event.results.length; i += 1) {
@@ -462,11 +441,19 @@ export default function App() {
       }
       latest = `${finalText}${interim}`.trim();
       heardDraft.current = latest;
-      if (latest) armSilence();
     };
     rec.onerror = (event) => {
       if (handled || listenId.current !== id) return;
       const code = event.error || "";
+      if (code === "not-allowed" || code === "service-not-allowed") {
+        handled = true;
+        clearTimers();
+        listenRef.current = null;
+        markHearing(false);
+        phaseRef.current = "idle";
+        if (micState.current !== "pending") setMicNote("De microfoon mag niet.");
+        return;
+      }
       if ((code === "aborted" || code === "no-speech") && !latest.trim()) {
         grace = setTimeout(() => {
           if (!handled && listenId.current === id) close();
@@ -482,7 +469,6 @@ export default function App() {
       listenRef.current = null;
       markHearing(false);
       phaseRef.current = "idle";
-      showReply();
     };
     rec.onend = () => {
       if (handled || listenId.current !== id) return;
@@ -507,27 +493,14 @@ export default function App() {
     }, isAppleMobile() ? 12000 : 20000);
     try {
       rec.start();
-      if (isAppleMobile()) {
-        slow = setTimeout(() => {
-          if (handled || listenId.current !== id || engineStarted) return;
-          if (offerTypedReply({ recognizer: true, started: false, transcript: latest })) showReply();
-        }, 700);
-      }
+      markHearing(true);
     } catch {
       handled = true;
       clearTimers();
       phaseRef.current = "idle";
       markHearing(false);
-      showReply();
+      if (micState.current !== "pending") setMicNote("De microfoon mag niet.");
     }
-  }
-
-  function sendTyped(event) {
-    event.preventDefault();
-    const text = typed.trim();
-    if (!text) return;
-    stopListening();
-    takePhrase(text);
   }
 
   function onMic() {
@@ -538,10 +511,14 @@ export default function App() {
     if (!startedRef.current) {
       setAvatarMode("wave");
       setMicNote(mutedRef.current ? "De stem staat uit." : "Hoi! Ik ben Margit.");
+      listenFromTap();
       beginSession();
       return;
     }
-    if (flowRef.current === "hello") return;
+    if (flowRef.current === "hello") {
+      listenFromTap();
+      return;
+    }
     if (flowRef.current === "mood") bump();
     stopSpeaking();
     const text = heardDraft.current.trim();
@@ -552,7 +529,7 @@ export default function App() {
       return;
     }
     if (busy) stopListening();
-    beginListen();
+    listenFromTap();
   }
 
   async function askLine(intent, context) {
@@ -681,7 +658,6 @@ export default function App() {
     if (ticket !== flowEpoch.current) return;
     setFlowBoth("mood");
     setAvatarMode("idle");
-    beginListen();
   }
 
   function beginSession() {
@@ -828,25 +804,6 @@ export default function App() {
                     <p className="listen-state" role="status">
                       {micNote}
                     </p>
-                  ) : null}
-                  {replyOpen ? (
-                    <form className="typed" onSubmit={sendTyped}>
-                      <input
-                        ref={replyRef}
-                        value={typed}
-                        onChange={(event) => setTyped(event.target.value)}
-                        placeholder="Typ je antwoord"
-                        aria-label="Typ je antwoord"
-                        autoFocus
-                        autoComplete="off"
-                        autoCapitalize="sentences"
-                        enterKeyHint="send"
-                        inputMode="text"
-                      />
-                      <button type="submit" disabled={!typed.trim()}>
-                        Stuur
-                      </button>
-                    </form>
                   ) : null}
                   <button
                     type="button"

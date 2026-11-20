@@ -8,7 +8,6 @@ import {
   isAppleMobile,
   listensAfterReply,
   needsChromePulse,
-  offerTypedReply,
   pickDutchVoice,
   recognitionSettings,
   visibleReply
@@ -149,13 +148,6 @@ test("iPhone listens once per tap and still shows a reply", () => {
   );
   assert.equal(calmChatError(new Error("Berichten ontbreken.")), "Berichten ontbreken.");
   assert.ok(CHAT_TIMEOUT_MS >= 1000);
-});
-
-test("a missed listen offers a typed reply", () => {
-  assert.equal(offerTypedReply({ recognizer: false, started: false, transcript: "" }), true);
-  assert.equal(offerTypedReply({ recognizer: true, started: false, transcript: "" }), true);
-  assert.equal(offerTypedReply({ recognizer: true, started: true, transcript: "   " }), true);
-  assert.equal(offerTypedReply({ recognizer: true, started: true, transcript: "goed" }), false);
 });
 
 test("the Chrome speech pulse stays off on iPhone", () => {
