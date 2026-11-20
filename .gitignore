@@ -19,6 +19,9 @@ public/models/*.glb
 certs/*.pem
 certs/*.cnf
 
+# Whisper stays on the PC that transcribes the iPad recording.
+tools/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

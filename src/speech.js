@@ -84,6 +84,19 @@ export function emptyListenShouldRestart(attempts) {
   return Number(attempts) < 1;
 }
 
+// "speech" starts an utterance, "send" ends one, "again" drops a silent take.
+export function nextListenTick({ heard, loud, waitMs, speechMs, quietMs }) {
+  if (heard && speechMs >= 8000) return "send";
+  if (!heard) {
+    if (loud) return "speech";
+    if (waitMs >= 15000) return "again";
+    return "wait";
+  }
+  if (loud) return "speech";
+  if (quietMs >= 700 && speechMs >= 400) return "send";
+  return "wait";
+}
+
 export function dutchBody(text, fallback) {
   const raw = String(text || "").trim();
   if (!raw) return fallback;

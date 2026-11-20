@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import "./App.css";
 import { apiUrl, publicUrl } from "./api.js";
 import MargitFigure from "./MargitFigure.jsx";
-import { CHAT_TIMEOUT_MS, dutchBody, isAppleMobile, playbackWaitMs } from "./speech.js";
+import { CHAT_TIMEOUT_MS, dutchBody, isAppleMobile, nextListenTick, playbackWaitMs } from "./speech.js";
 import { hearHelp, hearTooHard, spellingIsRight } from "./games.js";
 import { poseForTurn } from "./clips.js";
 import {
@@ -68,6 +68,14 @@ function SpellPad({ value, disabled, onType, onErase, onSend }) {
   );
 }
 
+function recorderMime() {
+  if (typeof MediaRecorder === "undefined" || typeof MediaRecorder.isTypeSupported !== "function") return "";
+  if (MediaRecorder.isTypeSupported("audio/mp4")) return "audio/mp4";
+  if (MediaRecorder.isTypeSupported("audio/webm;codecs=opus")) return "audio/webm;codecs=opus";
+  if (MediaRecorder.isTypeSupported("audio/webm")) return "audio/webm";
+  return "";
+}
+
 function MargitAvatar({ mode }) {
   const picture = AVATARS[mode] || AVATARS.idle;
   return (
@@ -108,12 +116,11 @@ export default function App() {
   const micAsk = useRef(null);
   const micOnce = useRef(false);
   const listenRef = useRef(null);
-  const recognizerRef = useRef(null);
+  const meterRef = useRef(null);
   const listenId = useRef(0);
   const hearingRef = useRef(false);
   const phaseRef = useRef("idle");
   const listenWait = useRef(null);
-  const heardDraft = useRef("");
   const showKeys = flow === "spell" && keysOpen && !game;
 
   function setFlowBoth(next) {
@@ -145,18 +152,14 @@ export default function App() {
   useEffect(() => {
     return () => {
       listenId.current += 1;
-      if (listenWait.current) clearTimeout(listenWait.current);
+      if (listenWait.current) {
+        clearTimeout(listenWait.current);
+        clearInterval(listenWait.current);
+      }
       const rec = listenRef.current;
       listenRef.current = null;
-      if (!rec) return;
-      rec.onresult = null;
-      rec.onerror = null;
-      rec.onend = null;
-      try {
-        rec.abort();
-      } catch {
-        // The page is already going away.
-      }
+      if (rec && typeof rec.abort === "function") rec.abort();
+      releaseMic();
     };
   }, []);
 
@@ -168,24 +171,18 @@ export default function App() {
     listenId.current += 1;
     const rec = listenRef.current;
     listenRef.current = null;
-    if (!rec) return;
-    rec.onresult = null;
-    rec.onerror = null;
-    rec.onend = null;
+    if (!rec || typeof rec.abort !== "function") return;
     try {
       rec.abort();
     } catch {
-      try {
-        rec.stop();
-      } catch {
-        // The browser already closed this listen.
-      }
+      // The capture was already closed.
     }
   }
 
   function clearListenWait() {
     if (listenWait.current) {
       clearTimeout(listenWait.current);
+      clearInterval(listenWait.current);
       listenWait.current = null;
     }
   }
@@ -422,9 +419,6 @@ export default function App() {
       .then((stream) => {
         micStream.current = stream;
         micState.current = "allowed";
-        // Allow has closed. Drop the capture so it cannot pause the hello
-        // or hold the mic away from recognition. Do not call getUserMedia again.
-        releaseMic();
         return true;
       })
       .catch((error) => {
@@ -444,21 +438,184 @@ export default function App() {
     }
   }
 
-  function beginListen() {
-    const Ctor = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!Ctor) {
-      phaseRef.current = "idle";
-      markHearing(false);
-      setMicNote("De microfoon doet het niet.");
-      return;
+  function liveMic() {
+    const stream = micStream.current;
+    if (!stream) return null;
+    const live = stream.getAudioTracks().some((track) => track.readyState === "live");
+    return live ? stream : null;
+  }
+
+  function prepareMeter() {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return null;
+    if (!meterRef.current) {
+      meterRef.current = { ctx: new Ctx(), analyser: null, data: null, stream: null };
     }
+    const ctx = meterRef.current.ctx;
+    if (ctx.state === "suspended") ctx.resume().catch(() => {});
+    return meterRef.current;
+  }
+
+  function connectMeter(stream) {
+    const meter = prepareMeter();
+    if (!meter) return null;
+    if (meter.stream === stream && meter.analyser) return meter;
+    const source = meter.ctx.createMediaStreamSource(stream);
+    const analyser = meter.ctx.createAnalyser();
+    analyser.fftSize = 1024;
+    source.connect(analyser);
+    meter.analyser = analyser;
+    meter.data = new Uint8Array(analyser.fftSize);
+    meter.stream = stream;
+    return meter;
+  }
+
+  function meterIsLoud(meter) {
+    if (!meter?.analyser || !meter.data) return false;
+    meter.analyser.getByteTimeDomainData(meter.data);
+    let sum = 0;
+    const data = meter.data;
+    for (let i = 0; i < data.length; i += 1) {
+      const value = (data[i] - 128) / 128;
+      sum += value * value;
+    }
+    return Math.sqrt(sum / data.length) >= 0.03;
+  }
+
+  function beginListen() {
+    const stream = liveMic();
     clearListenWait();
     haltRecognition();
-    heardDraft.current = "";
     const id = listenId.current;
+    if (!stream || typeof MediaRecorder === "undefined") {
+      phaseRef.current = "idle";
+      markHearing(false);
+      return;
+    }
     phaseRef.current = "listening";
     markHearing(true);
-    openRecognizer(Ctor, id);
+    recordUntilWords(stream, id);
+  }
+
+  function recordUntilWords(stream, id) {
+    if (listenId.current !== id || phaseRef.current !== "listening") return;
+    const mime = recorderMime();
+    let recorder;
+    try {
+      recorder = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
+    } catch {
+      phaseRef.current = "idle";
+      markHearing(false);
+      return;
+    }
+    const chunks = [];
+    let deliver = true;
+    recorder.ondataavailable = (event) => {
+      if (event.data && event.data.size) chunks.push(event.data);
+    };
+    const stopped = new Promise((resolve) => {
+      recorder.onstop = () => {
+        const type = recorder.mimeType || mime || "application/octet-stream";
+        resolve(deliver ? new Blob(chunks, { type }) : null);
+      };
+      recorder.onerror = () => resolve(null);
+    });
+    const stopRecorder = () => {
+      if (recorder.state === "inactive") return;
+      try {
+        recorder.stop();
+      } catch {
+        // The capture was already closed.
+      }
+    };
+    listenRef.current = {
+      abort() {
+        deliver = false;
+        stopRecorder();
+      }
+    };
+    const meter = connectMeter(stream);
+    try {
+      recorder.start(200);
+    } catch {
+      listenRef.current = null;
+      phaseRef.current = "idle";
+      markHearing(false);
+      return;
+    }
+    const started = Date.now();
+    let heard = false;
+    let speechAt = started;
+    let quietAt = started;
+    const timer = window.setInterval(() => {
+      if (listenId.current !== id) {
+        window.clearInterval(timer);
+        deliver = false;
+        stopRecorder();
+        return;
+      }
+      const loud = meter ? meterIsLoud(meter) : false;
+      const now = Date.now();
+      const decision = nextListenTick({
+        heard,
+        loud,
+        waitMs: now - started,
+        speechMs: heard ? now - speechAt : 0,
+        quietMs: heard && !loud ? now - quietAt : 0
+      });
+      if (decision === "speech") {
+        if (!heard) speechAt = now;
+        heard = true;
+        quietAt = now;
+        return;
+      }
+      if (decision === "again") {
+        window.clearInterval(timer);
+        deliver = false;
+        stopRecorder();
+        stopped.then(() => {
+          if (listenId.current === id && phaseRef.current === "listening") recordUntilWords(stream, id);
+        });
+        return;
+      }
+      if (decision === "send") {
+        window.clearInterval(timer);
+        stopRecorder();
+        stopped.then((blob) => hearBlob(blob, stream, id));
+      }
+    }, 80);
+    listenWait.current = timer;
+  }
+
+  async function hearBlob(blob, stream, id) {
+    if (listenId.current !== id || phaseRef.current !== "listening") return;
+    if (!blob || blob.size < 800) {
+      recordUntilWords(stream, id);
+      return;
+    }
+    let text = "";
+    try {
+      const response = await fetch(apiUrl("/api/hear"), {
+        method: "POST",
+        headers: { "Content-Type": blob.type || "application/octet-stream" },
+        body: blob,
+        signal: AbortSignal.timeout(60000)
+      });
+      if (response.ok) {
+        const data = await response.json().catch(() => ({}));
+        text = String(data.text || "").trim();
+      }
+    } catch {
+      text = "";
+    }
+    if (listenId.current !== id || phaseRef.current !== "listening") return;
+    if (!text) {
+      window.setTimeout(() => {
+        if (listenId.current === id && phaseRef.current === "listening") recordUntilWords(stream, id);
+      }, 400);
+      return;
+    }
+    takePhrase(text);
   }
 
   function takePhrase(text) {
@@ -487,143 +644,12 @@ export default function App() {
     answerChild(trimmed);
   }
 
-  function openRecognizer(Ctor, id) {
-    if (listenId.current !== id || phaseRef.current !== "listening") return;
-    const rec = recognizerRef.current || new Ctor();
-    recognizerRef.current = rec;
-    listenRef.current = rec;
-    rec.lang = "nl-NL";
-    rec.continuous = true;
-    rec.interimResults = true;
-    rec.maxAlternatives = 1;
-
-    let handled = false;
-    let latest = "";
-    let grace = null;
-    let restarting = false;
-    const clearTimers = () => {
-      if (grace) clearTimeout(grace);
-      grace = null;
-    };
-    const showListening = () => {
-      markHearing(true);
-    };
-    const onEmpty = () => {
-      if (handled || listenId.current !== id || restarting) return;
-      if (latest.trim()) {
-        deliver(latest);
-        return;
-      }
-      restarting = true;
-      showListening();
-      window.setTimeout(() => {
-        restarting = false;
-        if (handled || listenId.current !== id) return;
-        if (latest.trim()) {
-          deliver(latest);
-          return;
-        }
-        try {
-          rec.start();
-        } catch (error) {
-          const message = String((error && error.message) || "");
-          if (/already started/i.test(message)) return;
-          // A new recognizer asks for the microphone again. Stay on this one.
-        }
-      }, 600);
-    };
-    const deliver = (text) => {
-      const heard = String(text || "").trim();
-      if (handled || listenId.current !== id || !heard) return false;
-      handled = true;
-      clearTimers();
-      heardDraft.current = heard;
-      listenRef.current = null;
-      markHearing(false);
-      setMicEnabled(true);
-      try {
-        rec.stop();
-      } catch {
-        // The phrase is already in hand.
-      }
-      takePhrase(heard);
-      return true;
-    };
-    rec.onstart = () => {
-      if (handled || listenId.current !== id) return;
-      markHearing(true);
-    };
-    rec.onresult = (event) => {
-      if (handled || listenId.current !== id) return;
-      markHearing(true);
-      let finalText = "";
-      let interim = "";
-      for (let i = 0; i < event.results.length; i += 1) {
-        const piece = event.results[i][0]?.transcript || "";
-        if (event.results[i].isFinal) finalText += `${piece} `;
-        else interim += piece;
-      }
-      latest = `${finalText}${interim}`.trim();
-      heardDraft.current = latest;
-      if (!latest) return;
-      if (finalText.trim()) {
-        deliver(finalText);
-        return;
-      }
-      if (grace) clearTimeout(grace);
-      grace = window.setTimeout(() => {
-        grace = null;
-        if (!handled && listenId.current === id && latest.trim()) deliver(latest);
-      }, 900);
-    };
-    rec.onerror = (event) => {
-      if (handled || listenId.current !== id) return;
-      const code = event.error || "";
-      if (code === "not-allowed" || code === "service-not-allowed") {
-        handled = true;
-        clearTimers();
-        listenRef.current = null;
-        markHearing(false);
-        phaseRef.current = "idle";
-        setMicEnabled(true);
-        return;
-      }
-      if (code === "aborted") return;
-      if (latest.trim()) {
-        deliver(latest);
-        return;
-      }
-      onEmpty();
-    };
-    rec.onend = () => {
-      if (handled || listenId.current !== id) return;
-      if (latest.trim()) {
-        deliver(latest);
-        return;
-      }
-      onEmpty();
-    };
-    try {
-      rec.start();
-      showListening();
-    } catch (error) {
-      if (micWasDenied(error)) {
-        handled = true;
-        clearTimers();
-        markHearing(false);
-        phaseRef.current = "idle";
-        return;
-      }
-      showListening();
-      onEmpty();
-    }
-  }
-
   function onMic() {
     const now = Date.now();
     if (now - tapStamp.current < 700) return;
     tapStamp.current = now;
     unlockAudio();
+    prepareMeter();
     if (!startedRef.current) {
       setAvatarMode("wave");
       const ready = askMicOnce();

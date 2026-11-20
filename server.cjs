@@ -6,6 +6,8 @@ const os = require("os");
 const path = require("path");
 const { spawn } = require("child_process");
 const express = require("express");
+const ffmpegPath = require("ffmpeg-static");
+const { usableTranscript } = require("./scripts/hear.cjs");
 
 const PAGES_ORIGIN = "https://tdiddy020105.github.io";
 
@@ -27,7 +29,10 @@ app.use((req, res, next) => {
 app.use(express.json({ limit: "32kb" }));
 
 const SPEAK_DIR = path.join(os.tmpdir(), "margit-speak");
+const HEAR_DIR = path.join(os.tmpdir(), "margit-hear");
 const SPEAK_SCRIPT = path.join(__dirname, "scripts", "speak-dutch.ps1");
+const WHISPER_BIN = path.join(__dirname, "tools", "whisper", "bin", "Release", "whisper-cli.exe");
+const WHISPER_MODEL = path.join(__dirname, "tools", "whisper", "ggml-base.bin");
 const speakJobs = new Map();
 let pcVoice = "";
 
@@ -225,6 +230,80 @@ function speakOnPc(text) {
   speakJobs.set(hash, job);
   return job;
 }
+
+function runTool(cmd, args, cwd) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(cmd, args, { windowsHide: true, cwd });
+    let err = "";
+    const timer = setTimeout(() => {
+      child.kill();
+      reject(new Error("Het omzetten duurde te lang."));
+    }, 45000);
+    child.stderr.on("data", (chunk) => {
+      err += chunk;
+    });
+    child.on("error", (error) => {
+      clearTimeout(timer);
+      reject(error);
+    });
+    child.on("close", (code) => {
+      clearTimeout(timer);
+      if (code !== 0) reject(new Error(err.trim() || `exit ${code}`));
+      else resolve();
+    });
+  });
+}
+
+function audioExt(mime) {
+  const value = String(mime || "").toLowerCase();
+  if (value.includes("wav")) return ".wav";
+  if (value.includes("webm")) return ".webm";
+  if (value.includes("mpeg") || value.includes("mp3")) return ".mp3";
+  if (value.includes("ogg")) return ".ogg";
+  if (value.includes("mp4") || value.includes("m4a") || value.includes("aac")) return ".m4a";
+  return ".audio";
+}
+
+async function transcribeAudio(buffer, mime) {
+  if (!Buffer.isBuffer(buffer) || buffer.length < 400) return "";
+  if (!fs.existsSync(WHISPER_BIN) || !fs.existsSync(WHISPER_MODEL) || !ffmpegPath) {
+    throw new Error("De herkenning op deze PC ontbreekt.");
+  }
+  const id = crypto.randomBytes(8).toString("hex");
+  fs.mkdirSync(HEAR_DIR, { recursive: true });
+  const input = path.join(HEAR_DIR, `${id}-in${audioExt(mime)}`);
+  const wav = path.join(HEAR_DIR, `${id}.wav`);
+  const outBase = path.join(HEAR_DIR, `${id}-text`);
+  fs.writeFileSync(input, buffer);
+  try {
+    await runTool(ffmpegPath, ["-y", "-i", input, "-ac", "1", "-ar", "16000", wav]);
+    await runTool(
+      WHISPER_BIN,
+      ["-m", WHISPER_MODEL, "-f", wav, "-l", "nl", "-nt", "-np", "-sns", "-bs", "1", "-bo", "1", "-otxt", "-of", outBase],
+      path.dirname(WHISPER_BIN)
+    );
+    const txt = `${outBase}.txt`;
+    return usableTranscript(fs.existsSync(txt) ? fs.readFileSync(txt, "utf8") : "");
+  } finally {
+    for (const file of [input, wav, `${outBase}.txt`]) {
+      try {
+        fs.rmSync(file, { force: true });
+      } catch {
+        // A temp file can already be gone.
+      }
+    }
+  }
+}
+
+app.post("/api/hear", express.raw({ type: () => true, limit: "12mb" }), async (req, res) => {
+  try {
+    const text = await transcribeAudio(req.body, req.headers["content-type"]);
+    res.json({ text });
+  } catch (error) {
+    console.error("Hear error:", error.message);
+    res.status(503).json({ error: "De herkenning op deze PC doet het nu niet." });
+  }
+});
 
 app.post("/api/speak", async (req, res) => {
   const text = String(req.body?.text || "")
