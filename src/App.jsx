@@ -252,7 +252,10 @@ export default function App() {
       body: JSON.stringify({ text: line })
     })
       .then(async (response) => {
-        if (!response.ok) throw new Error("speak");
+        if (!response.ok) {
+          const detail = (await response.text()).trim();
+          throw new Error(detail || `De stem gaf ${response.status}.`);
+        }
         const blob = await response.blob();
         if (speakId.current !== id) return;
         const url = URL.createObjectURL(blob);
@@ -264,22 +267,22 @@ export default function App() {
         };
         audio.onended = finish;
         audio.onerror = () => {
-          setMicNote(line);
+          setMicNote("De stem wil niet afspelen.");
           finish();
         };
         audio.src = url;
         setAvatarMode(mode);
         const played = audio.play();
         if (played && typeof played.catch === "function") {
-          played.catch(() => {
-            setMicNote(line);
+          played.catch((error) => {
+            setMicNote(error?.message || "De stem wil niet afspelen.");
             finish();
           });
         }
       })
-      .catch(() => {
+      .catch((error) => {
         if (speakId.current !== id) return;
-        setMicNote(line);
+        setMicNote(error?.message || "De stem doet het niet.");
         if (onDone) onDone();
       });
     return true;
@@ -363,16 +366,20 @@ export default function App() {
     openRecognizer(Ctor, id);
   }
 
-  function handleSilence() {
-    phaseRef.current = "idle";
-    markHearing(false);
+  function sayMissed() {
+    const line = "Ik hoorde je niet.";
+    bump();
+    stopListening();
+    stopSpeaking();
+    setMicNote(line);
+    speak(line, "talk");
   }
 
   function takePhrase(text) {
     const trimmed = String(text || "").trim();
     phaseRef.current = "idle";
     if (!trimmed) {
-      handleSilence();
+      sayMissed();
       return;
     }
     setMicNote("");
@@ -391,8 +398,10 @@ export default function App() {
       }
       if (hearTooHard(trimmed)) {
         onHard();
+        return;
       }
     }
+    answerChild(trimmed);
   }
 
   function openRecognizer(Ctor, id) {
@@ -414,16 +423,31 @@ export default function App() {
       grace = null;
       watchdog = null;
     };
-    const close = () => {
-      if (handled || listenId.current !== id) return;
+    const deliver = (text) => {
+      const heard = String(text || "").trim();
+      if (handled || listenId.current !== id || !heard) return false;
       handled = true;
       clearTimers();
-      heardDraft.current = latest;
+      heardDraft.current = heard;
       listenRef.current = null;
       markHearing(false);
-      if (latest.trim() && !playerIsPlaying()) takePhrase(latest);
-      else if (!latest.trim()) handleSilence();
-      else phaseRef.current = "idle";
+      try {
+        rec.stop();
+      } catch {
+        // The phrase is already in hand.
+      }
+      takePhrase(heard);
+      return true;
+    };
+    const close = () => {
+      if (handled || listenId.current !== id) return;
+      if (deliver(latest)) return;
+      handled = true;
+      clearTimers();
+      heardDraft.current = "";
+      listenRef.current = null;
+      markHearing(false);
+      sayMissed();
     };
     rec.onstart = () => {
       if (handled || listenId.current !== id) return;
@@ -441,6 +465,7 @@ export default function App() {
       }
       latest = `${finalText}${interim}`.trim();
       heardDraft.current = latest;
+      if (finalText.trim()) deliver(finalText);
     };
     rec.onerror = (event) => {
       if (handled || listenId.current !== id) return;
@@ -534,6 +559,7 @@ export default function App() {
 
   async function askLine(intent, context) {
     const word = context.word || "";
+    const child = context.child || "";
     try {
       const response = await fetch("/api/chat", {
         method: "POST",
@@ -544,17 +570,32 @@ export default function App() {
           messages: [
             {
               role: "user",
-              content: `Bedoeling: ${intent}. Woord: ${word}. Hij zei: ${context.child || ""}. Eén vriendelijke Nederlandse zin, zoals "Hoi! Wat leuk dat je er bent!". Zeg niet "hé kind" of "hey kind".`
+              content: `Bedoeling: ${intent}. Woord: ${word}. Hij zei: ${child}. Eén vriendelijke Nederlandse zin, zoals "Hoi! Wat leuk dat je er bent!". Zeg niet "hé kind" of "hey kind".`
             }
           ]
         }),
         signal: chatSignal()
       });
+      if (!response.ok) {
+        const detail = (await response.text()).trim();
+        setMicNote(detail || `Margit gaf ${response.status}.`);
+        return spokenLine(null, intent, word);
+      }
       const data = await response.json().catch(() => ({}));
       return spokenLine(data, intent, word);
-    } catch {
+    } catch (error) {
+      setMicNote(error?.message || "Margit kan nu niet antwoorden.");
       return spokenLine(null, intent, word);
     }
+  }
+
+  async function answerChild(child) {
+    const ticket = bump();
+    stopListening();
+    stopSpeaking();
+    const line = await askLine("chat", lineContext("", 0, false, child));
+    if (ticket !== flowEpoch.current) return;
+    await speak(line, poseForTurn({ moment: "chat" }));
   }
 
   async function offerGames(ticket, word) {
