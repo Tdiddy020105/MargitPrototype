@@ -1,15 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import "./App.css";
 import MargitFigure from "./MargitFigure.jsx";
-import {
-  CHAT_TIMEOUT_MS,
-  DUTCH_VOICE_LINE,
-  isAppleMobile,
-  needsChromePulse,
-  pickDutchVoice,
-  recognitionSettings,
-  voiceLangIsDutch
-} from "./speech.js";
+import { CHAT_TIMEOUT_MS, isAppleMobile, recognitionSettings } from "./speech.js";
 import { hearHelp, hearTooHard, spellingIsRight } from "./games.js";
 import { poseForTurn } from "./clips.js";
 import {
@@ -34,18 +26,8 @@ const AVATARS = {
 };
 
 const LETTERS = "abcdefghijklmnopqrstuvwxyz".split("");
-
-function chooseVoice(voices) {
-  return pickDutchVoice(voices || []);
-}
-
-function speechSupported() {
-  return (
-    typeof window !== "undefined" &&
-    "speechSynthesis" in window &&
-    typeof window.SpeechSynthesisUtterance === "function"
-  );
-}
+const SILENT_WAV =
+  "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=";
 
 function chatSignal() {
   if (typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function") {
@@ -103,8 +85,6 @@ export default function App() {
   const [micNote, setMicNote] = useState("");
   const [muted, setMuted] = useState(false);
   const [avatarMode, setAvatarMode] = useState("wave");
-  const [voicesReady, setVoicesReady] = useState(false);
-  const [femaleVoice, setFemaleVoice] = useState(false);
 
   const flowRef = useRef("hello");
   const gameRef = useRef(null);
@@ -117,20 +97,14 @@ export default function App() {
   const beginSessionRef = useRef(() => {});
   const speakDone = useRef(null);
   const mutedRef = useRef(false);
-  const voicesRef = useRef([]);
   const speakId = useRef(0);
-  const speakTimer = useRef(null);
-  const speechUnlocked = useRef(false);
+  const playerRef = useRef(null);
   const listenRef = useRef(null);
   const listenId = useRef(0);
   const hearingRef = useRef(false);
   const phaseRef = useRef("idle");
   const listenWait = useRef(null);
   const heardDraft = useRef("");
-  const pendingSpeak = useRef(null);
-  const speakReplyRef = useRef(() => false);
-  const replyEpoch = useRef(0);
-  const speechOk = speechSupported();
   const showKeys = flow === "spell" && keysOpen && !game;
 
   function setFlowBoth(next) {
@@ -178,43 +152,8 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (!speechOk) return undefined;
-    const synth = window.speechSynthesis;
-    const loadVoices = (force) => {
-      const voices = synth.getVoices();
-      if (!voices.length && !force) return;
-      voicesRef.current = voices;
-      const chosen = chooseVoice(voices);
-      setFemaleVoice(Boolean(chosen));
-      setVoicesReady(true);
-      if (!chosen || mutedRef.current) {
-        if (!chosen && pendingSpeak.current) {
-          try {
-            synth.cancel();
-          } catch {
-            // Drop a queued English utterance. There is no Dutch voice yet.
-          }
-        }
-        return;
-      }
-      const job = pendingSpeak.current;
-      if (!job || job.epoch !== replyEpoch.current) return;
-      pendingSpeak.current = null;
-      speakReplyRef.current(job.text, job.mode, job.onDone, job.epoch);
-    };
-    loadVoices(false);
     if (!isAppleMobile()) beginSessionRef.current();
-    const onVoices = () => loadVoices(true);
-    synth.addEventListener("voiceschanged", onVoices);
-    const giveUp = setTimeout(() => loadVoices(true), 1200);
-    return () => {
-      clearTimeout(giveUp);
-      synth.removeEventListener("voiceschanged", onVoices);
-      speakId.current += 1;
-      if (speakTimer.current) clearTimeout(speakTimer.current);
-      synth.cancel();
-    };
-  }, [speechOk]);
+  }, []);
 
   function haltRecognition() {
     listenId.current += 1;
@@ -254,158 +193,96 @@ export default function App() {
     markHearing(false);
   }
 
+  function ensurePlayer() {
+    if (!playerRef.current) {
+      const audio = new Audio();
+      audio.setAttribute("playsinline", "true");
+      playerRef.current = audio;
+    }
+    return playerRef.current;
+  }
+
+  function unlockAudio() {
+    const audio = ensurePlayer();
+    if (audio.dataset.unlocked === "1") return;
+    audio.src = SILENT_WAV;
+    const pending = audio.play();
+    if (pending && typeof pending.catch === "function") pending.catch(() => {});
+    audio.dataset.unlocked = "1";
+  }
+
+  function playerIsPlaying() {
+    const audio = playerRef.current;
+    return Boolean(audio && !audio.paused && !audio.ended && audio.currentSrc && !audio.currentSrc.startsWith("data:"));
+  }
+
   function stopSpeaking() {
     speakId.current += 1;
-    const job = pendingSpeak.current;
-    pendingSpeak.current = null;
-    if (speakTimer.current) {
-      clearTimeout(speakTimer.current);
-      speakTimer.current = null;
+    const audio = playerRef.current;
+    if (audio) {
+      audio.pause();
+      audio.removeAttribute("src");
+      try {
+        audio.load();
+      } catch {
+        // The player was already idle.
+      }
     }
-    if (speechOk) window.speechSynthesis.cancel();
     setAvatarMode(flowRef.current === "hello" ? "wave" : "idle");
     const done = speakDone.current;
     speakDone.current = null;
     if (done) done();
-    else if (job && job.onDone) job.onDone();
   }
 
-  function currentVoice() {
-    const synth = window.speechSynthesis;
-    const loaded = synth.getVoices();
-    return chooseVoice(loaded.length ? loaded : voicesRef.current);
-  }
-
-  function unlockSpeech() {
-    if (!speechOk || mutedRef.current || speechUnlocked.current) return;
-    const voice = currentVoice();
-    if (!voice) return;
-    try {
-      const primer = new SpeechSynthesisUtterance(" ");
-      primer.volume = 0;
-      primer.voice = voice;
-      primer.lang = "nl-NL";
-      window.speechSynthesis.speak(primer);
-      speechUnlocked.current = true;
-    } catch {
-      speechUnlocked.current = false;
-    }
-  }
-
-  function speakReply(text, mode, onDone, epoch = replyEpoch.current) {
-    if (!speechOk || mutedRef.current || !text.trim()) return false;
-    const synth = window.speechSynthesis;
-    const voice = currentVoice();
-    if (epoch !== replyEpoch.current) return false;
-    if (!voice || !voiceLangIsDutch(voice.lang)) {
-      try {
-        synth.cancel();
-      } catch {
-        // Drop a queued English utterance.
-      }
-      pendingSpeak.current = { text, mode, onDone, epoch };
-      setMicNote(text.trim());
-      return false;
-    }
-    pendingSpeak.current = null;
-
+  function speakReply(text, mode, onDone) {
+    const line = String(text || "").trim();
+    if (!line) return false;
     const id = speakId.current + 1;
     speakId.current = id;
-    if (speakTimer.current) {
-      clearTimeout(speakTimer.current);
-      speakTimer.current = null;
-    }
-
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = "nl-NL";
-    utterance.voice = voice;
-
-    let started = false;
-    let finished = false;
-    let giveUp = 0;
-    let cap = 0;
-    const finish = () => {
-      if (finished || speakId.current !== id) return;
-      finished = true;
-      window.clearTimeout(giveUp);
-      window.clearTimeout(cap);
-      setAvatarMode("idle");
+    if (mutedRef.current) {
+      setMicNote("De stem staat uit.");
       if (onDone) onDone();
-    };
-    utterance.onstart = () => {
-      if (finished || speakId.current !== id) return;
-      started = true;
-      setAvatarMode(mode);
-      if (flowRef.current === "hello") setMicNote("");
-    };
-    utterance.onend = finish;
-    utterance.onerror = () => {
-      if (!started) setMicNote(text.trim());
-      finish();
-    };
-
-    const say = () => {
-      if (speakId.current !== id || mutedRef.current) {
-        if (mutedRef.current) setMicNote("De stem staat uit.");
-        finish();
-        return;
-      }
-      try {
-        synth.cancel();
-      } catch {
-        // Drop whatever the default English voice already queued.
-      }
-      const fresh = chooseVoice(synth.getVoices());
-      if (!fresh || !voiceLangIsDutch(fresh.lang)) {
-        pendingSpeak.current = { text, mode, onDone, epoch };
-        setMicNote(text.trim());
-        return;
-      }
-      utterance.lang = "nl-NL";
-      utterance.voice = fresh;
-      setAvatarMode(mode);
-      const start = () => {
-        if (speakId.current !== id || mutedRef.current) return;
-        const again = chooseVoice(synth.getVoices());
-        if (!again || !voiceLangIsDutch(again.lang)) {
-          pendingSpeak.current = { text, mode, onDone, epoch };
-          setMicNote(text.trim());
-          return;
+      return true;
+    }
+    const audio = ensurePlayer();
+    fetch("/api/speak", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: line })
+    })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("speak");
+        const blob = await response.blob();
+        if (speakId.current !== id) return;
+        const url = URL.createObjectURL(blob);
+        const finish = () => {
+          URL.revokeObjectURL(url);
+          if (speakId.current !== id) return;
+          setAvatarMode(flowRef.current === "hello" ? "wave" : "idle");
+          if (onDone) onDone();
+        };
+        audio.onended = finish;
+        audio.onerror = () => {
+          setMicNote(line);
+          finish();
+        };
+        audio.src = url;
+        setAvatarMode(mode);
+        const played = audio.play();
+        if (played && typeof played.catch === "function") {
+          played.catch(() => {
+            setMicNote(line);
+            finish();
+          });
         }
-        utterance.voice = again;
-        try {
-          if (needsChromePulse()) synth.resume();
-          synth.speak(utterance);
-        } catch {
-          setMicNote(text.trim());
-          finish();
-          return;
-        }
-        giveUp = window.setTimeout(() => {
-          if (speakId.current !== id || finished || started) return;
-          if (synth.speaking || synth.pending) {
-            started = true;
-            return;
-          }
-          setMicNote(text.trim());
-          finish();
-        }, 1200);
-        cap = window.setTimeout(() => {
-          if (speakId.current !== id || finished) return;
-          finish();
-        }, Math.min(24000, 2500 + text.length * 90));
-      };
-      if (isAppleMobile()) {
-        speakTimer.current = setTimeout(start, 160);
-        return;
-      }
-      start();
-    };
-    say();
+      })
+      .catch(() => {
+        if (speakId.current !== id) return;
+        setMicNote(line);
+        if (onDone) onDone();
+      });
     return true;
   }
-
-  speakReplyRef.current = speakReply;
 
   function speak(text, mode) {
     return new Promise((resolve) => {
@@ -417,16 +294,7 @@ export default function App() {
         resolve();
       };
       speakDone.current = finish;
-      if (speakReply(text, mode, finish)) return;
-      if (pendingSpeak.current && pendingSpeak.current.text === text) {
-        const earlier = pendingSpeak.current.onDone;
-        pendingSpeak.current.onDone = () => {
-          if (earlier) earlier();
-          finish();
-        };
-        return;
-      }
-      finish();
+      if (!speakReply(text, mode, finish)) finish();
     });
   }
 
@@ -447,34 +315,22 @@ export default function App() {
     const apple = isAppleMobile();
     const kick = () => {
       if (listenId.current !== id || phaseRef.current !== "listening") return;
-      const synth = speechOk ? window.speechSynthesis : null;
-      if (synth && (synth.speaking || synth.pending) && kick.spins < 25) {
+      if (playerIsPlaying() && kick.spins < 40) {
         kick.spins += 1;
-        listenWait.current = setTimeout(kick, 80);
+        listenWait.current = setTimeout(kick, 150);
         return;
       }
-      if (synth && (synth.speaking || synth.pending)) {
-        try {
-          synth.cancel();
-        } catch {
-          // The engine stayed busy. Start the listen anyway.
-        }
+      if (playerIsPlaying()) {
+        const audio = playerRef.current;
+        if (audio) audio.pause();
       }
       openRecognizer(Ctor, id);
     };
     kick.spins = 0;
     if (apple) {
-      if (speechOk) {
-        try {
-          window.speechSynthesis.resume();
-        } catch {
-          // Resume is best-effort inside the tap.
-        }
-      }
       openRecognizer(Ctor, id);
       return;
     }
-    if (!speechUnlocked.current) unlockSpeech();
     listenWait.current = setTimeout(kick, 220);
   }
 
@@ -643,9 +499,8 @@ export default function App() {
     const now = Date.now();
     if (now - tapStamp.current < 450) return;
     tapStamp.current = now;
-    const engine = speechOk ? window.speechSynthesis : null;
-    const sayingHello =
-      flowRef.current === "hello" && Boolean(engine && (engine.speaking || engine.pending));
+    unlockAudio();
+    const sayingHello = flowRef.current === "hello" && playerIsPlaying();
     if (!startedRef.current || (flowRef.current === "hello" && !sayingHello)) {
       if (startedRef.current) stopSpeaking();
       startedRef.current = false;
@@ -894,15 +749,9 @@ export default function App() {
             <div className="presence">
               <div className="intro">
                 <div className="voice">
-                  {!speechOk ? (
-                    <p className="stem-note">Stem is niet beschikbaar</p>
-                  ) : voicesReady && !femaleVoice ? (
-                    <p className="stem-note">{DUTCH_VOICE_LINE}</p>
-                  ) : femaleVoice ? (
-                    <button type="button" className="stem" onClick={toggleMute} aria-pressed={muted}>
-                      {muted ? "Stem aan" : "Stem uit"}
-                    </button>
-                  ) : null}
+                  <button type="button" className="stem" onClick={toggleMute} aria-pressed={muted}>
+                    {muted ? "Stem aan" : "Stem uit"}
+                  </button>
                 </div>
               </div>
               <MargitAvatar mode={avatarMode} />

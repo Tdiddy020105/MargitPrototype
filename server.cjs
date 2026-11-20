@@ -1,8 +1,18 @@
 
+const crypto = require("crypto");
+const fs = require("fs");
+const os = require("os");
+const path = require("path");
+const { spawn } = require("child_process");
 const express = require("express");
 
 const app = express();
-app.use(express.json());
+app.use(express.json({ limit: "32kb" }));
+
+const SPEAK_DIR = path.join(os.tmpdir(), "margit-speak");
+const SPEAK_SCRIPT = path.join(__dirname, "scripts", "speak-dutch.ps1");
+const speakJobs = new Map();
+let pcVoice = "";
 
 const OLLAMA_URL = "http://127.0.0.1:11434";
 const MODEL = "margit:latest";
@@ -140,6 +150,82 @@ function shapeReply(text) {
 
   return `${sentences[0]} ${ask}`;
 }
+
+function speakOnPc(text) {
+  const hash = crypto.createHash("sha256").update(text).digest("hex");
+  const wav = path.join(SPEAK_DIR, `${hash}.wav`);
+  if (fs.existsSync(wav) && fs.statSync(wav).size > 44) {
+    return Promise.resolve({ file: wav, voice: pcVoice });
+  }
+  if (speakJobs.has(hash)) return speakJobs.get(hash);
+  fs.mkdirSync(SPEAK_DIR, { recursive: true });
+  const textFile = path.join(SPEAK_DIR, `${hash}.txt`);
+  fs.writeFileSync(textFile, text, "utf8");
+  const job = new Promise((resolve, reject) => {
+    const child = spawn(
+      "powershell.exe",
+      [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        SPEAK_SCRIPT,
+        "-TextFile",
+        textFile,
+        "-OutFile",
+        wav
+      ],
+      { windowsHide: true }
+    );
+    let out = "";
+    let err = "";
+    const timer = setTimeout(() => {
+      child.kill();
+    }, 20000);
+    child.stdout.on("data", (chunk) => {
+      out += chunk;
+    });
+    child.stderr.on("data", (chunk) => {
+      err += chunk;
+    });
+    child.on("error", (error) => {
+      clearTimeout(timer);
+      reject(error);
+    });
+    child.on("close", (code) => {
+      clearTimeout(timer);
+      const voice = out.trim().split(/\r?\n/).filter(Boolean).pop() || "";
+      if (voice) pcVoice = voice;
+      if (code !== 0 || !fs.existsSync(wav)) {
+        reject(new Error(err.trim() || `Dutch speech exited ${code}`));
+        return;
+      }
+      resolve({ file: wav, voice: pcVoice });
+    });
+  }).finally(() => {
+    speakJobs.delete(hash);
+  });
+  speakJobs.set(hash, job);
+  return job;
+}
+
+app.post("/api/speak", async (req, res) => {
+  const text = String(req.body?.text || "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 500);
+  if (!text) return res.status(400).json({ error: "Lege zin." });
+  try {
+    const spoken = await speakOnPc(text);
+    res.setHeader("Content-Type", "audio/wav");
+    res.setHeader("Cache-Control", "public, max-age=86400");
+    if (spoken.voice) res.setHeader("X-Margit-Voice", spoken.voice);
+    fs.createReadStream(spoken.file).pipe(res);
+  } catch (error) {
+    console.error("Dutch speech error:", error.message);
+    res.status(503).json({ error: "De stem op deze PC doet het niet." });
+  }
+});
 
 app.get("/api/health", async (_req, res) => {
   try {

@@ -185,10 +185,6 @@ export async function speakDutch(text) {
   });
 }
 
-if (typeof window !== "undefined" && window.speechSynthesis) {
-  window.speechSynthesis.getVoices();
-}
-
 export function listenDutch({ onResult, onError }) {
   const Rec = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!Rec) {
