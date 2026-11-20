@@ -5,6 +5,7 @@ import {
   DUTCH_VOICE_LINE,
   calmChatError,
   dutchBody,
+  emptyListenShouldRestart,
   playbackWaitMs,
   dutchSpeechRequest,
   isAppleMobile,
@@ -150,6 +151,8 @@ test("iPhone listens once per tap and still shows a reply", () => {
   );
   assert.equal(calmChatError(new Error("Berichten ontbreken.")), "Berichten ontbreken.");
   assert.ok(CHAT_TIMEOUT_MS >= 1000);
+  assert.equal(emptyListenShouldRestart(0), true);
+  assert.equal(emptyListenShouldRestart(1), false);
   assert.ok(playbackWaitMs(13.3650625) > 8000);
   assert.ok(playbackWaitMs(13.3650625) > 13365);
   assert.equal(playbackWaitMs(Number.NaN), 70000);

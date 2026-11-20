@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import "./App.css";
 import MargitFigure from "./MargitFigure.jsx";
-import { CHAT_TIMEOUT_MS, dutchBody, isAppleMobile, playbackWaitMs } from "./speech.js";
+import { CHAT_TIMEOUT_MS, dutchBody, emptyListenShouldRestart, isAppleMobile, playbackWaitMs } from "./speech.js";
 import { hearHelp, hearTooHard, spellingIsRight } from "./games.js";
 import { poseForTurn } from "./clips.js";
 import {
@@ -209,9 +209,12 @@ export default function App() {
   function unlockAudio() {
     const audio = ensurePlayer();
     if (audio.dataset.unlocked === "1") return;
-    audio.src = SILENT_WAV;
-    const pending = audio.play();
-    if (pending && typeof pending.catch === "function") pending.catch(() => {});
+    const existing = audio.getAttribute("src") || "";
+    if (!existing) {
+      audio.src = SILENT_WAV;
+      const played = audio.play();
+      if (played && typeof played.catch === "function") played.catch(() => {});
+    }
     audio.dataset.unlocked = "1";
   }
 
@@ -372,23 +375,27 @@ export default function App() {
     return name === "NotAllowedError" || name === "PermissionDeniedError" || name === "SecurityError";
   }
 
-  function liveMic() {
+  function releaseMic() {
     const stream = micStream.current;
-    if (!stream) return null;
-    const track = stream.getAudioTracks().find((item) => item.readyState === "live");
-    return track ? stream : null;
+    if (!stream) return;
+    for (const track of stream.getAudioTracks()) {
+      try {
+        track.stop();
+      } catch {
+        // The capture was already closed.
+      }
+    }
   }
 
-  function requestMic() {
-    if (liveMic()) {
-      micState.current = "allowed";
-      return;
-    }
-    if (micAsk.current) return;
+  function askMicOnce() {
+    if (micState.current === "allowed") return Promise.resolve(true);
+    if (micState.current === "denied") return Promise.resolve(false);
+    if (micAsk.current) return micAsk.current;
     const media = navigator.mediaDevices;
     if (!media || typeof media.getUserMedia !== "function") {
+      micState.current = "denied";
       denyMic();
-      return;
+      return Promise.resolve(false);
     }
     micState.current = "pending";
     let pending;
@@ -397,21 +404,24 @@ export default function App() {
     } catch {
       micState.current = "denied";
       denyMic();
-      return;
+      return Promise.resolve(false);
     }
     micAsk.current = pending
       .then((stream) => {
         micStream.current = stream;
         micState.current = "allowed";
-        return stream;
+        // Allow has closed. Drop the capture so it cannot pause the hello
+        // or hold the mic away from recognition. Do not call getUserMedia again.
+        releaseMic();
+        return true;
       })
       .catch((error) => {
-        micAsk.current = null;
-        micStream.current = null;
         micState.current = "denied";
         if (micWasDenied(error)) denyMic();
         else setMicNote("De microfoon doet het niet.");
+        return false;
       });
+    return micAsk.current;
   }
 
   function setMicEnabled(enabled) {
@@ -437,7 +447,7 @@ export default function App() {
     phaseRef.current = "listening";
     markHearing(true);
     setMicNote("Ik luister");
-    openRecognizer(Ctor, id);
+    openRecognizer(Ctor, id, false);
   }
 
   function sayMissed() {
@@ -478,7 +488,7 @@ export default function App() {
     answerChild(trimmed);
   }
 
-  function openRecognizer(Ctor, id) {
+  function openRecognizer(Ctor, id, retried) {
     if (listenId.current !== id || phaseRef.current !== "listening") return;
     const rec = new Ctor();
     listenRef.current = rec;
@@ -490,6 +500,8 @@ export default function App() {
     let handled = false;
     let latest = "";
     let grace = null;
+    let restarting = false;
+    let attempts = retried ? 1 : 0;
     const clearTimers = () => {
       if (grace) clearTimeout(grace);
       grace = null;
@@ -497,6 +509,39 @@ export default function App() {
     const showListening = () => {
       markHearing(true);
       setMicNote("Ik luister");
+    };
+    const onEmpty = () => {
+      if (handled || listenId.current !== id || restarting) return;
+      if (latest.trim()) {
+        deliver(latest);
+        return;
+      }
+      if (!emptyListenShouldRestart(attempts)) {
+        miss();
+        return;
+      }
+      attempts += 1;
+      restarting = true;
+      showListening();
+      window.setTimeout(() => {
+        restarting = false;
+        if (handled || listenId.current !== id) return;
+        if (latest.trim()) {
+          deliver(latest);
+          return;
+        }
+        try {
+          rec.start();
+        } catch (error) {
+          const message = String((error && error.message) || "");
+          if (/already started/i.test(message)) return;
+          rec.onend = null;
+          rec.onerror = null;
+          rec.onresult = null;
+          rec.onstart = null;
+          openRecognizer(Ctor, id, true);
+        }
+      }, 200);
     };
     const miss = () => {
       if (handled || listenId.current !== id) return;
@@ -571,7 +616,7 @@ export default function App() {
         return;
       }
       if (code === "no-speech") {
-        miss();
+        onEmpty();
         return;
       }
       handled = true;
@@ -588,10 +633,9 @@ export default function App() {
         deliver(latest);
         return;
       }
-      miss();
+      onEmpty();
     };
     try {
-      setMicEnabled(false);
       rec.start();
       showListening();
     } catch (error) {
@@ -612,8 +656,8 @@ export default function App() {
     if (!startedRef.current) {
       setAvatarMode("wave");
       setMicNote(mutedRef.current ? "De stem staat uit." : "Hoi! Ik ben Margit.");
-      requestMic();
-      beginSession();
+      const ready = askMicOnce();
+      beginSession(ready);
       return;
     }
     if (flowRef.current === "hello") return;
@@ -759,24 +803,26 @@ export default function App() {
     beginWord(wordIndex.current);
   }
 
-  async function runHello() {
+  async function runHello(ready) {
     const ticket = bump();
     setKeysOpen(false);
     setFlowBoth("hello");
     setAvatarMode("wave");
+    const allowed = ready && typeof ready.then === "function" ? await ready : true;
+    if (ticket !== flowEpoch.current) return;
     const greeted = await speak(LINES.greet, poseForTurn({ moment: "greeting" }));
     if (!greeted || ticket !== flowEpoch.current) return;
     const asked = await speak(LINES.mood, poseForTurn({ moment: "chat" }));
     if (!asked || ticket !== flowEpoch.current) return;
     setFlowBoth("mood");
     setAvatarMode("idle");
-    beginListen();
+    if (allowed) beginListen();
   }
 
-  function beginSession() {
+  function beginSession(ready) {
     if (startedRef.current || flowRef.current === "pause") return;
     startedRef.current = true;
-    runHello();
+    runHello(ready);
   }
 
   beginSessionRef.current = beginSession;

@@ -79,6 +79,11 @@ export function playbackWaitMs(durationSec) {
   return Math.ceil(seconds * 1000) + 500;
 }
 
+// One empty end is a restart while "Ik luister" is showing. The next empty end is final.
+export function emptyListenShouldRestart(attempts) {
+  return Number(attempts) < 1;
+}
+
 export function dutchBody(text, fallback) {
   const raw = String(text || "").trim();
   if (!raw) return fallback;
