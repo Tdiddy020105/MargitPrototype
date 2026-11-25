@@ -274,6 +274,50 @@ export function activityFromText(text) {
   return null;
 }
 
+export function hearPlayMode(text) {
+  const value = foldActivity(text);
+  if (!value) return null;
+  const against = /tegen (mij|jou|je|haar|elkaar)/.test(value);
+  const together = /\bsamen\b/.test(value) || /tegen de klok|\bklok\b/.test(value);
+  if (against && together) return null;
+  if (against) return "tegen";
+  if (together) return "samen";
+  return null;
+}
+
+export function wantsToPlay(text) {
+  const value = foldActivity(text);
+  if (!value || hearTooHard(text) || hearPlayMode(text)) return false;
+  return /\b(spel|spelen|spelletje|gamen)\b/.test(value);
+}
+
+export function margitPick(cards, known, taken, random = Math.random) {
+  const closed = [];
+  for (let index = 0; index < cards.length; index += 1) {
+    if (!taken.includes(index)) closed.push(index);
+  }
+  const groups = new Map();
+  for (const index of closed) {
+    const word = known[index];
+    if (!word) continue;
+    const list = groups.get(word) || [];
+    list.push(index);
+    groups.set(word, list);
+  }
+  for (const indexes of groups.values()) {
+    if (indexes.length >= 2) return [indexes[0], indexes[1]];
+  }
+  if (closed.length < 2) return closed.slice();
+  const first = closed[Math.floor(random() * closed.length)];
+  const word = known[first];
+  if (word) {
+    const match = closed.find((index) => index !== first && known[index] === word);
+    if (match !== undefined) return [first, match];
+  }
+  const rest = closed.filter((index) => index !== first);
+  return [first, rest[Math.floor(random() * rest.length)]];
+}
+
 export function makeMemory(words, random = Math.random) {
   const cards = words.flatMap((word) => [
     { id: `${word}-a`, word },

@@ -3,15 +3,20 @@ import { missLimit } from "./games.js";
 export const SPELL_ORDER = ["boom", "kat", "zon", "vis"];
 
 export const LINES = {
-  greet:
-    "Hoi! Wat leuk dat je er bent! Ik ben Margit. Ik ben een computerprogramma waarmee je kunt oefenen met lezen en spellen. Zullen we samen iets leuks doen?",
-  mood: "Hoe gaat het met je?",
-  praise: "Ja! Helemaal goed. Knap gedaan!",
-  mistake: "Goed geprobeerd! Zullen we nog eens naar de eerste letter kijken?",
-  help: "Ik help je wel! Luister eens goed naar de eerste klank.",
-  hard: "Dat geeft helemaal niet. Misschien kunnen we iets anders proberen.",
-  offer: "Dit is een lastig woord. Kies maar: memory, woordzoeker of één letter anders.",
-  chat: "Hoi! Wat leuk dat je er bent!"
+  greet: "Hoi! Ik ben Margit. We gaan een woord spellen.",
+  mood: "Hoe gaat het?",
+  praise: "Ja! Die heb je.",
+  mistake: "Bijna. Kijk nog eens naar de eerste letter.",
+  help: "Ik help je. Luister naar de eerste klank.",
+  hard: "Geeft niks. Dan doen we iets anders.",
+  offer: "Wil je tegen mij, of eerst samen en dan tegen de klok?",
+  chat: "Hoi. Leuk dat je er bent."
+};
+
+export const PLAY_LINES = {
+  tegen: "Goed. Jij begint.",
+  samen: "Goed. Eerst samen.",
+  clock: "Nu tegen de klok."
 };
 
 const INTENTS = ["praise", "mistake", "help", "hard", "offer", "spell", "chat"];
@@ -50,13 +55,20 @@ function namesAGame(line) {
   );
 }
 
-function namesAllGames(line) {
+function asksBothModes(line) {
   const value = fold(line);
-  return value.includes("memory") && value.includes("woordzoeker") && value.includes("letter");
+  if (value.includes("woordzoeker") || value.includes("letter")) return false;
+  const against = /tegen (mij|jou|je|haar|elkaar)/.test(value);
+  return against && value.includes("samen") && value.includes("klok");
+}
+
+function picksAMode(line) {
+  const value = fold(line);
+  return /tegen (mij|jou|je|haar|elkaar)|tegen de klok|\bklok\b/.test(value);
 }
 
 function counsels(line) {
-  return /gevoelens|erover praten|ik ben er voor je|dat klinkt zwaar|hulpverlener|therap/i.test(
+  return /gevoelens|erover praten|praat erover|ik ben er voor je|dat klinkt zwaar|hulpverlener|therap|hoe voel je/i.test(
     line
   );
 }
@@ -76,11 +88,15 @@ export function acceptLine(text, intent, word) {
   if (counsels(line) || weirdGreeting(line)) return null;
   const sentences = line.split(/(?<=[.!?])\s+/).filter(Boolean);
   if (sentences.length > 3) return null;
-  if ((intent === "mistake" || intent === "help" || intent === "hard" || intent === "praise") && mentionsWord(line, word)) {
+  if (
+    (intent === "mistake" || intent === "help" || intent === "hard" || intent === "praise" || intent === "chat") &&
+    mentionsWord(line, word)
+  ) {
     return null;
   }
   if (intent === "spell" && !mentionsWord(line, word)) return null;
-  if (intent === "offer") return namesAllGames(line) ? line : null;
+  if (intent !== "offer" && picksAMode(line)) return null;
+  if (intent === "offer") return asksBothModes(line) ? line : null;
   if (namesAGame(line)) return null;
   return line;
 }

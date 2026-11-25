@@ -36,7 +36,10 @@ import {
   spellTargetFrom,
   spellingIsRight,
   showsSpellPad,
-  wantsGame
+  wantsGame,
+  hearPlayMode,
+  wantsToPlay,
+  margitPick
 } from "../src/games.js";
 
 test("word search places every word on a straight line", () => {
@@ -241,4 +244,13 @@ test("speech cues pick a game, help, or too hard", () => {
   assert.equal(hearTooHard("Dit is te moeilijk"), true);
   assert.equal(hearHelp("Kun je me helpen?"), true);
   assert.equal(hearTooHard("Kun je me helpen?"), false);
+  assert.equal(hearPlayMode("tegen jou"), "tegen");
+  assert.equal(hearPlayMode("eerst samen en dan de klok"), "samen");
+  assert.equal(hearPlayMode("tegen jou of samen"), null);
+  assert.equal(hearPlayMode("memory"), null);
+  assert.equal(wantsToPlay("ik wil een spel"), true);
+  assert.equal(wantsToPlay("tegen jou"), false);
+  assert.equal(wantsToPlay("dit is te moeilijk"), false);
+  const cards = [{ pair: "kat" }, { pair: "zon" }, { pair: "kat" }, { pair: "vis" }];
+  assert.deepEqual(margitPick(cards, { 0: "kat", 2: "kat" }, [], () => 0), [0, 2]);
 });

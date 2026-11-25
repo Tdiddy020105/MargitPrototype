@@ -42,12 +42,12 @@ const MODEL = "margit:latest";
 const INTENTS = ["praise", "mistake", "help", "hard", "offer", "spell", "chat"];
 
 const FALLBACK = {
-  praise: "Ja! Helemaal goed. Knap gedaan!",
-  mistake: "Goed geprobeerd! Zullen we nog eens naar de eerste letter kijken?",
-  help: "Ik help je wel! Luister eens goed naar de eerste klank.",
-  hard: "Dat geeft helemaal niet. Misschien kunnen we iets anders proberen.",
-  offer: "Dit is een lastig woord. Kies maar: memory, woordzoeker of één letter anders.",
-  chat: "Hoi! Wat leuk dat je er bent!"
+  praise: "Ja! Die heb je.",
+  mistake: "Bijna. Kijk nog eens naar de eerste letter.",
+  help: "Ik help je. Luister naar de eerste klank.",
+  hard: "Geeft niks. Dan doen we iets anders.",
+  offer: "Wil je tegen mij, of eerst samen en dan tegen de klok?",
+  chat: "Hoi. Leuk dat je er bent."
 };
 
 const SYSTEM_PROMPT = `
@@ -56,10 +56,10 @@ Je kiest niet wat er op het scherm gebeurt. De bedoeling is al gekozen.
 Antwoord alleen met JSON: {"line":"...","intent":"<precies de bedoeling die je kreeg>"}
 Hoogstens twee korte zinnen. Geen les, geen advies over gevoelens, geen denkproces.
 Bij praise: kort prijzen, het woord niet noemen.
-Bij mistake, help of hard: het woord niet noemen, de letters niet geven, geen spel noemen.
+Bij mistake, help of hard: het woord niet noemen, de letters niet geven, geen spel noemen, geen keuze maken.
 Bij spell: vraag het gegeven woord te spellen.
-Bij offer: zeg dat het een lastig woord is en noem memory, woordzoeker en één letter anders.
-Bij chat: reageer kort en vriendelijk, zoals "Hoi! Wat leuk dat je er bent!". Zeg nooit "hé kind", "hey kind" of "hee kind". Noem hem niet "kind".
+Bij offer: vraag of hij tegen jou wil, of eerst samen en dan tegen de klok. Noem allebei. Kies niet voor hem. Noem geen spel bij naam.
+Bij chat: één korte warme zin, zoals "Hoi. Leuk dat je er bent." Geen keuze, geen spel. Zeg nooit "hé kind", "hey kind" of "hee kind". Noem hem niet "kind".
 `;
 
 function fold(text) {
@@ -77,9 +77,16 @@ function mentionsWord(line, word) {
   return new RegExp(`\\b${target}\\b`).test(fold(line));
 }
 
-function namesAllGames(line) {
+function asksBothModes(line) {
   const value = fold(line);
-  return value.includes("memory") && value.includes("woordzoeker") && value.includes("letter");
+  if (value.includes("woordzoeker") || value.includes("letter")) return false;
+  const against = /tegen (mij|jou|je|haar|elkaar)/.test(value);
+  return against && value.includes("samen") && value.includes("klok");
+}
+
+function picksAMode(line) {
+  const value = fold(line);
+  return /tegen (mij|jou|je|haar|elkaar)|tegen de klok|\bklok\b/.test(value);
 }
 
 function namesAGame(line) {
@@ -105,7 +112,8 @@ function acceptLine(text, intent, word) {
     return null;
   }
   if (intent === "spell" && !mentionsWord(line, word)) return null;
-  if (intent === "offer") return namesAllGames(line) ? line : null;
+  if (intent !== "offer" && picksAMode(line)) return null;
+  if (intent === "offer") return asksBothModes(line) ? line : null;
   if (namesAGame(line)) return null;
   return line;
 }

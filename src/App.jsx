@@ -3,10 +3,11 @@ import "./App.css";
 import { apiUrl, publicUrl } from "./api.js";
 import MargitFigure from "./MargitFigure.jsx";
 import { CHAT_TIMEOUT_MS, dutchBody, isAppleMobile, nextListenTick, playbackWaitMs } from "./speech.js";
-import { hearHelp, hearTooHard, spellingIsRight } from "./games.js";
+import { hearHelp, hearPlayMode, hearTooHard, spellingIsRight, wantsToPlay } from "./games.js";
 import { poseForTurn } from "./clips.js";
 import {
   LINES,
+  PLAY_LINES,
   SPELL_ORDER,
   hearSensitive,
   nextStep,
@@ -88,6 +89,7 @@ function MargitAvatar({ mode }) {
 export default function App() {
   const [flow, setFlow] = useState("hello");
   const [game, setGame] = useState(null);
+  const [playMode, setPlayMode] = useState(null);
   const [keysOpen, setKeysOpen] = useState(false);
   const [spelled, setSpelled] = useState("");
   const [hearing, setHearing] = useState(false);
@@ -631,6 +633,11 @@ export default function App() {
       replyThenSpell(trimmed);
       return;
     }
+    if (flowRef.current === "offer") {
+      const mode = hearPlayMode(trimmed);
+      if (mode) startMode(mode);
+      return;
+    }
     if (flowRef.current === "spell") {
       if (hearHelp(trimmed)) {
         onHelp();
@@ -638,6 +645,18 @@ export default function App() {
       }
       if (hearTooHard(trimmed)) {
         onHard();
+        return;
+      }
+      const chosen = hearPlayMode(trimmed);
+      if (chosen) {
+        startMode(chosen);
+        return;
+      }
+      if (wantsToPlay(trimmed)) {
+        const ticket = bump();
+        stopListening();
+        stopSpeaking();
+        offerModes(ticket, currentWord());
         return;
       }
     }
@@ -674,7 +693,7 @@ export default function App() {
           messages: [
             {
               role: "user",
-              content: `Bedoeling: ${intent}. Woord: ${word}. Hij zei: ${child}. Eén vriendelijke Nederlandse zin, zoals "Hoi! Wat leuk dat je er bent!". Zeg niet "hé kind" of "hey kind".`
+              content: `Bedoeling: ${intent}. Woord: ${word}. Hij zei: ${child}. Eén korte Nederlandse zin, alsof je met een kind praat. Kies geen spel en geen manier van spelen.`
             }
           ]
         }),
@@ -694,21 +713,50 @@ export default function App() {
 
   async function answerChild(child) {
     const ticket = bump();
+    const spelling = flowRef.current === "spell";
+    const word = spelling ? currentWord() : "";
     stopListening();
     stopSpeaking();
-    const line = await askLine("chat", lineContext("", 0, false, child));
+    const line = await askLine("chat", lineContext(word, missesRef.current, helpAsked.current, child));
     if (ticket !== flowEpoch.current) return;
     await speak(line, poseForTurn({ moment: "chat" }));
+    if (!spelling || ticket !== flowEpoch.current) return;
+    const again = await askLine("spell", lineContext(word, missesRef.current, helpAsked.current));
+    if (ticket !== flowEpoch.current) return;
+    await speak(again, poseForTurn({ moment: "spell" }));
+    if (ticket !== flowEpoch.current) return;
+    setKeysOpen(true);
+    setAvatarMode("idle");
   }
 
-  async function offerGames(ticket, word) {
+  async function offerModes(ticket, word) {
     setKeysOpen(false);
+    setPlayMode(null);
     const line = await askLine("offer", lineContext(word, missesRef.current, helpAsked.current));
     if (ticket !== flowEpoch.current) return;
     setFlowBoth("offer");
     await speak(line, poseForTurn({ moment: "offer" }));
     if (ticket !== flowEpoch.current) return;
     setAvatarMode("idle");
+    beginListen();
+  }
+
+  function startMode(mode) {
+    if (mode !== "tegen" && mode !== "samen") return;
+    bump();
+    stopListening();
+    stopSpeaking();
+    setKeysOpen(false);
+    setPlayMode(mode);
+    gameRef.current = "memory";
+    setGame("memory");
+    setFlowBoth("game");
+    setAvatarMode("idle");
+    speak(PLAY_LINES[mode], poseForTurn({ moment: "offer" }));
+  }
+
+  function offerGames(ticket, word) {
+    return offerModes(ticket, word);
   }
 
   async function beginWord(index) {
@@ -720,6 +768,7 @@ export default function App() {
     helpAsked.current = false;
     gameRef.current = null;
     setGame(null);
+    setPlayMode(null);
     setSpelled("");
     setKeysOpen(false);
     setFlowBoth("spell");
@@ -858,34 +907,27 @@ export default function App() {
     setAvatarMode("idle");
   }
 
-  function chooseGame(name) {
-    if (flowRef.current !== "offer") return;
-    bump();
-    stopListening();
-    stopSpeaking();
-    setKeysOpen(false);
-    gameRef.current = name;
-    setGame(name);
-    setFlowBoth("game");
-    setAvatarMode("idle");
-  }
-
   function leaveGame() {
     gameRef.current = null;
     setGame(null);
+    setPlayMode(null);
     beginWord(wordIndex.current + 1);
   }
 
   function reactToGame(kind) {
     if (flowRef.current !== "game") return;
+    if (kind === "clock") {
+      speak(PLAY_LINES.clock, poseForTurn({ moment: "offer" }));
+      return;
+    }
     if (kind === "celebrate") {
       speak(LINES.praise, poseForTurn({ moment: "success" }));
       return;
     }
-    if (kind === "encourage") speak("Kijk nog eens.", poseForTurn({ moment: "mistake" }));
+    if (kind === "encourage") speak(LINES.mistake, poseForTurn({ moment: "mistake" }));
   }
 
-  const showMic = !game && (flow === "hello" || flow === "mood" || flow === "spell");
+  const showMic = !game && (flow === "hello" || flow === "mood" || flow === "spell" || flow === "offer");
 
   return (
     <div className="tablet">
@@ -914,7 +956,7 @@ export default function App() {
             <section className="talk">
               {game === "zoek" && <Woordzoeker onBack={leaveGame} onReact={reactToGame} />}
               {game === "letter" && <EenLetter onBack={leaveGame} onReact={reactToGame} />}
-              {game === "memory" && <MemorySpel onBack={leaveGame} onReact={reactToGame} />}
+              {game === "memory" && <MemorySpel play={playMode} onBack={leaveGame} onReact={reactToGame} />}
               {flow === "pause" && !game && (
                 <div className="pause-panel">
                   <p className="pause-title">Pauze</p>
@@ -934,14 +976,11 @@ export default function App() {
               )}
               {flow === "offer" && !game && (
                 <div className="choices">
-                  <button type="button" className="choice" onClick={() => chooseGame("memory")}>
-                    Memory
+                  <button type="button" className="choice" onClick={() => startMode("tegen")}>
+                    Tegen jou
                   </button>
-                  <button type="button" className="choice" onClick={() => chooseGame("zoek")}>
-                    Woordzoeker
-                  </button>
-                  <button type="button" className="choice" onClick={() => chooseGame("letter")}>
-                    Eén letter anders
+                  <button type="button" className="choice" onClick={() => startMode("samen")}>
+                    Samen, dan de klok
                   </button>
                 </div>
               )}

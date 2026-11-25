@@ -27,21 +27,26 @@ test("raw model text cannot choose the activity or reveal the word", () => {
   assert.equal(spokenLine({ reply: "We doen memory." }, step.intent, "boom"), LINES.mistake);
   assert.equal(spokenLine({ line: "Het woord is boom.", intent: "mistake" }, "mistake", "boom"), LINES.mistake);
   assert.equal(spokenLine({ reply: "Kies memory." }, "offer", "boom"), LINES.offer);
+  assert.equal(spokenLine({ line: "We spelen tegen elkaar.", intent: "offer" }, "offer", "boom"), LINES.offer);
   assert.equal(
     spokenLine(
-      { line: "Dit is een lastig woord. Kies memory, woordzoeker of één letter anders.", intent: "offer" },
+      { line: "Wil je tegen mij, of eerst samen en dan tegen de klok?", intent: "offer" },
       "offer",
       "boom"
-    ).includes("woordzoeker"),
-    true
+    ),
+    LINES.offer
   );
   assert.equal(spokenLine({ reply: "nog eens" }, "spell", "boom"), spellLine("boom"));
   assert.equal(spokenLine(null, "praise", "boom"), LINES.praise);
   assert.equal(spokenLine({ reply: "Hé kind, hoe gaat het?" }, "chat", ""), LINES.chat);
   assert.equal(acceptLine("Hey kind!", "chat", ""), null);
-  assert.match(LINES.greet, /^Hoi! Wat leuk dat je er bent!/);
-  assert.match(LINES.chat, /^Hoi! Wat leuk dat je er bent!/);
-  assert.equal(acceptLine("Ja! Helemaal goed. Knap gedaan!", "praise", "boom"), LINES.praise);
+  assert.match(LINES.greet, /^Hoi! Ik ben Margit/);
+  assert.match(LINES.chat, /^Hoi\. Leuk dat je er bent/);
+  assert.match(LINES.offer, /tegen mij/);
+  assert.match(LINES.offer, /samen/);
+  assert.match(LINES.offer, /klok/);
+  assert.equal(acceptLine(LINES.praise, "praise", "boom"), LINES.praise);
+  assert.equal(acceptLine("We doen het tegen jou.", "chat", ""), null);
   assert.equal(fallbackLine("help"), LINES.help);
 });
 
