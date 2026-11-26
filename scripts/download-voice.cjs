@@ -6,15 +6,17 @@ const { pipeline } = require("stream/promises");
 const ROOT = path.join(__dirname, "..", "tools", "voice");
 const PIPER_DIR = path.join(ROOT, "piper");
 const PIPER_EXE = path.join(PIPER_DIR, "piper.exe");
-const MODEL = path.join(ROOT, "nl_BE-nathalie-medium.onnx");
-const CONFIG = path.join(ROOT, "nl_BE-nathalie-medium.onnx.json");
+const MODEL = path.join(ROOT, "nl_NL-mls-medium.onnx");
+const CONFIG = path.join(ROOT, "nl_NL-mls-medium.onnx.json");
 const ZIP = path.join(ROOT, "piper_windows_amd64.zip");
+const VOICE_NAME = "Piper mls_5809 nl-NL";
+const SPEAKER = "3";
 
 const PIPER_URL = "https://github.com/rhasspy/piper/releases/download/2023.11.14-2/piper_windows_amd64.zip";
 const MODEL_URL =
-  "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/nl/nl_BE/nathalie/medium/nl_BE-nathalie-medium.onnx?download=true";
+  "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/nl/nl_NL/mls/medium/nl_NL-mls-medium.onnx?download=true";
 const CONFIG_URL =
-  "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/nl/nl_BE/nathalie/medium/nl_BE-nathalie-medium.onnx.json?download=true";
+  "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/nl/nl_NL/mls/medium/nl_NL-mls-medium.onnx.json?download=true";
 
 function voiceFilesReady() {
   return fs.existsSync(PIPER_EXE) && fs.existsSync(MODEL) && fs.existsSync(CONFIG);
@@ -45,17 +47,17 @@ function extractPiper() {
 }
 
 async function ensureDutchVoice() {
-  if (voiceFilesReady()) return { exe: PIPER_EXE, model: MODEL, config: CONFIG, name: "Piper Nathalie nl-BE" };
+  if (voiceFilesReady()) return { exe: PIPER_EXE, model: MODEL, config: CONFIG, speaker: SPEAKER, name: VOICE_NAME };
   fs.mkdirSync(ROOT, { recursive: true });
   await download(PIPER_URL, ZIP, 1000000);
   extractPiper();
   await download(CONFIG_URL, CONFIG, 100);
   await download(MODEL_URL, MODEL, 1000000);
-  if (!voiceFilesReady()) throw new Error("Nathalie voice files are missing.");
-  return { exe: PIPER_EXE, model: MODEL, config: CONFIG, name: "Piper Nathalie nl-BE" };
+  if (!voiceFilesReady()) throw new Error("Netherlands Dutch voice files are missing.");
+  return { exe: PIPER_EXE, model: MODEL, config: CONFIG, speaker: SPEAKER, name: VOICE_NAME };
 }
 
-module.exports = { ensureDutchVoice, voiceFilesReady, PIPER_EXE, MODEL, CONFIG };
+module.exports = { ensureDutchVoice, voiceFilesReady, PIPER_EXE, MODEL, CONFIG, SPEAKER, VOICE_NAME };
 
 if (require.main === module) {
   ensureDutchVoice()

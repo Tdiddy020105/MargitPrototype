@@ -8,7 +8,15 @@ const { spawn } = require("child_process");
 const express = require("express");
 const ffmpegPath = require("ffmpeg-static");
 const { usableTranscript } = require("./scripts/hear.cjs");
-const { ensureDutchVoice, voiceFilesReady, PIPER_EXE, MODEL: VOICE_MODEL, CONFIG: VOICE_CONFIG } = require("./scripts/download-voice.cjs");
+const {
+  ensureDutchVoice,
+  voiceFilesReady,
+  PIPER_EXE,
+  MODEL: VOICE_MODEL,
+  CONFIG: VOICE_CONFIG,
+  SPEAKER,
+  VOICE_NAME
+} = require("./scripts/download-voice.cjs");
 
 const PAGES_ORIGIN = "https://tdiddy020105.github.io";
 
@@ -35,7 +43,6 @@ const SPEAK_SCRIPT = path.join(__dirname, "scripts", "speak-dutch.ps1");
 const WHISPER_BIN = path.join(__dirname, "tools", "whisper", "bin", "Release", "whisper-cli.exe");
 const WHISPER_MODEL = path.join(__dirname, "tools", "whisper", "ggml-base.bin");
 const speakJobs = new Map();
-const NATHALIE = "Piper Nathalie nl-BE";
 let pcVoice = "";
 
 const OLLAMA_URL = "http://127.0.0.1:11434";
@@ -220,13 +227,13 @@ function runSpeaker(command, args, options, wav, voiceName) {
   });
 }
 
-function speakWithNathalie(text, wav) {
+function speakWithPiper(text, wav) {
   return runSpeaker(
     PIPER_EXE,
-    ["--model", VOICE_MODEL, "--config", VOICE_CONFIG, "--output_file", wav, "--quiet"],
+    ["--model", VOICE_MODEL, "--config", VOICE_CONFIG, "--speaker", SPEAKER, "--output_file", wav, "--quiet"],
     { cwd: path.dirname(PIPER_EXE), input: Buffer.from(`${text}\n`, "utf8") },
     wav,
-    NATHALIE
+    VOICE_NAME
   );
 }
 
@@ -243,15 +250,15 @@ function speakWithFrank(text, wav) {
 }
 
 function speakOnPc(text) {
-  const nathalie = voiceFilesReady();
-  const hash = crypto.createHash("sha256").update(`${nathalie ? "nathalie" : "frank"}\n${text}`).digest("hex");
+  const piper = voiceFilesReady();
+  const hash = crypto.createHash("sha256").update(`${piper ? "mls5809" : "frank"}\n${text}`).digest("hex");
   const wav = path.join(SPEAK_DIR, `${hash}.wav`);
   if (fs.existsSync(wav) && fs.statSync(wav).size > 44) {
-    return Promise.resolve({ file: wav, voice: nathalie ? NATHALIE : pcVoice });
+    return Promise.resolve({ file: wav, voice: piper ? VOICE_NAME : pcVoice });
   }
   if (speakJobs.has(hash)) return speakJobs.get(hash);
   fs.mkdirSync(SPEAK_DIR, { recursive: true });
-  const job = (nathalie ? speakWithNathalie(text, wav) : speakWithFrank(text, wav)).finally(() => {
+  const job = (piper ? speakWithPiper(text, wav) : speakWithFrank(text, wav)).finally(() => {
     speakJobs.delete(hash);
   });
   speakJobs.set(hash, job);
@@ -469,9 +476,9 @@ function listen() {
 
 ensureDutchVoice()
   .then(() => {
-    pcVoice = NATHALIE;
+    pcVoice = VOICE_NAME;
   })
   .catch((error) => {
-    console.error("Nathalie voice is missing, Frank remains:", error.message);
+    console.error("Netherlands Dutch voice is missing, Frank remains:", error.message);
   })
   .finally(listen);
