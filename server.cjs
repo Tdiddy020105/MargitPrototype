@@ -8,6 +8,7 @@ const { spawn } = require("child_process");
 const express = require("express");
 const ffmpegPath = require("ffmpeg-static");
 const { usableTranscript } = require("./scripts/hear.cjs");
+const { ensureDutchVoice, voiceFilesReady, PIPER_EXE, MODEL: VOICE_MODEL, CONFIG: VOICE_CONFIG } = require("./scripts/download-voice.cjs");
 
 const PAGES_ORIGIN = "https://tdiddy020105.github.io";
 
@@ -34,6 +35,7 @@ const SPEAK_SCRIPT = path.join(__dirname, "scripts", "speak-dutch.ps1");
 const WHISPER_BIN = path.join(__dirname, "tools", "whisper", "bin", "Release", "whisper-cli.exe");
 const WHISPER_MODEL = path.join(__dirname, "tools", "whisper", "ggml-base.bin");
 const speakJobs = new Map();
+const NATHALIE = "Piper Nathalie nl-BE";
 let pcVoice = "";
 
 const OLLAMA_URL = "http://127.0.0.1:11434";
@@ -181,37 +183,16 @@ function shapeReply(text) {
   return `${sentences[0]} ${ask}`;
 }
 
-function speakOnPc(text) {
-  const hash = crypto.createHash("sha256").update(text).digest("hex");
-  const wav = path.join(SPEAK_DIR, `${hash}.wav`);
-  if (fs.existsSync(wav) && fs.statSync(wav).size > 44) {
-    return Promise.resolve({ file: wav, voice: pcVoice });
-  }
-  if (speakJobs.has(hash)) return speakJobs.get(hash);
-  fs.mkdirSync(SPEAK_DIR, { recursive: true });
-  const textFile = path.join(SPEAK_DIR, `${hash}.txt`);
-  fs.writeFileSync(textFile, text, "utf8");
-  const job = new Promise((resolve, reject) => {
-    const child = spawn(
-      "powershell.exe",
-      [
-        "-NoProfile",
-        "-ExecutionPolicy",
-        "Bypass",
-        "-File",
-        SPEAK_SCRIPT,
-        "-TextFile",
-        textFile,
-        "-OutFile",
-        wav
-      ],
-      { windowsHide: true }
-    );
+function runSpeaker(command, args, options, wav, voiceName) {
+  const { input, ...spawnOptions } = options || {};
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, { windowsHide: true, ...spawnOptions });
     let out = "";
     let err = "";
     const timer = setTimeout(() => {
       child.kill();
-    }, 20000);
+      reject(new Error("De stem duurde te lang."));
+    }, 30000);
     child.stdout.on("data", (chunk) => {
       out += chunk;
     });
@@ -224,15 +205,53 @@ function speakOnPc(text) {
     });
     child.on("close", (code) => {
       clearTimeout(timer);
-      const voice = out.trim().split(/\r?\n/).filter(Boolean).pop() || "";
-      if (voice) pcVoice = voice;
-      if (code !== 0 || !fs.existsSync(wav)) {
-        reject(new Error(err.trim() || `Dutch speech exited ${code}`));
+      if (code !== 0 || !fs.existsSync(wav) || fs.statSync(wav).size <= 44) {
+        reject(new Error(err.trim() || out.trim() || `Dutch speech exited ${code}`));
         return;
       }
+      const reported = out.trim().split(/\r?\n/).filter(Boolean).pop();
+      pcVoice = voiceName || reported || pcVoice;
       resolve({ file: wav, voice: pcVoice });
     });
-  }).finally(() => {
+    if (input) {
+      child.stdin.write(input);
+      child.stdin.end();
+    }
+  });
+}
+
+function speakWithNathalie(text, wav) {
+  return runSpeaker(
+    PIPER_EXE,
+    ["--model", VOICE_MODEL, "--config", VOICE_CONFIG, "--output_file", wav, "--quiet"],
+    { cwd: path.dirname(PIPER_EXE), input: Buffer.from(`${text}\n`, "utf8") },
+    wav,
+    NATHALIE
+  );
+}
+
+function speakWithFrank(text, wav) {
+  const textFile = `${wav}.txt`;
+  fs.writeFileSync(textFile, text, "utf8");
+  return runSpeaker(
+    "powershell.exe",
+    ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", SPEAK_SCRIPT, "-TextFile", textFile, "-OutFile", wav],
+    {},
+    wav,
+    ""
+  );
+}
+
+function speakOnPc(text) {
+  const nathalie = voiceFilesReady();
+  const hash = crypto.createHash("sha256").update(`${nathalie ? "nathalie" : "frank"}\n${text}`).digest("hex");
+  const wav = path.join(SPEAK_DIR, `${hash}.wav`);
+  if (fs.existsSync(wav) && fs.statSync(wav).size > 44) {
+    return Promise.resolve({ file: wav, voice: nathalie ? NATHALIE : pcVoice });
+  }
+  if (speakJobs.has(hash)) return speakJobs.get(hash);
+  fs.mkdirSync(SPEAK_DIR, { recursive: true });
+  const job = (nathalie ? speakWithNathalie(text, wav) : speakWithFrank(text, wav)).finally(() => {
     speakJobs.delete(hash);
   });
   speakJobs.set(hash, job);
@@ -424,24 +443,35 @@ app.post("/api/chat", async (req, res) => {
   }
 });
 
-const keyPath = path.join(__dirname, "certs", "dev-key.pem");
-const certPath = path.join(__dirname, "certs", "dev-cert.pem");
-const hasCert = fs.existsSync(keyPath) && fs.existsSync(certPath);
+function listen() {
+  const keyPath = path.join(__dirname, "certs", "dev-key.pem");
+  const certPath = path.join(__dirname, "certs", "dev-cert.pem");
+  const hasCert = fs.existsSync(keyPath) && fs.existsSync(certPath);
 
-if (hasCert) {
-  https
-    .createServer(
-      {
-        key: fs.readFileSync(keyPath),
-        cert: fs.readFileSync(certPath)
-      },
-      app
-    )
-    .listen(3001, "0.0.0.0", () => {
-      console.log("Margit server draait op https://0.0.0.0:3001");
-    });
-} else {
+  if (hasCert) {
+    https
+      .createServer(
+        {
+          key: fs.readFileSync(keyPath),
+          cert: fs.readFileSync(certPath)
+        },
+        app
+      )
+      .listen(3001, "0.0.0.0", () => {
+        console.log("Margit server draait op https://0.0.0.0:3001");
+      });
+    return;
+  }
   app.listen(3001, "0.0.0.0", () => {
     console.log("Margit server draait op http://0.0.0.0:3001");
   });
 }
+
+ensureDutchVoice()
+  .then(() => {
+    pcVoice = NATHALIE;
+  })
+  .catch((error) => {
+    console.error("Nathalie voice is missing, Frank remains:", error.message);
+  })
+  .finally(listen);
