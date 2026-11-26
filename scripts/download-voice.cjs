@@ -9,8 +9,37 @@ const PIPER_EXE = path.join(PIPER_DIR, "piper.exe");
 const MODEL = path.join(ROOT, "nl_NL-mls-medium.onnx");
 const CONFIG = path.join(ROOT, "nl_NL-mls-medium.onnx.json");
 const ZIP = path.join(ROOT, "piper_windows_amd64.zip");
-const VOICE_NAME = "Piper mls_5809 nl-NL";
+const VOICE_NAME = "Lot nl-NL";
 const SPEAKER = "3";
+const CHOICE = path.join(ROOT, "choice.json");
+
+// Female Netherlands speakers inside nl_NL-mls-medium. 5809 is the default.
+// Piper speaker ids: 5809 → 3, 7432 → 6, 1666 → 2, 496 → 4.
+const VOICES = [
+  { id: "lot", name: "Lot", speaker: "3" },
+  { id: "fenna", name: "Fenna", speaker: "6" },
+  { id: "noor", name: "Noor", speaker: "2" },
+  { id: "saar", name: "Saar", speaker: "4" }
+];
+
+function currentVoice() {
+  let id = "lot";
+  try {
+    const saved = JSON.parse(fs.readFileSync(CHOICE, "utf8"));
+    if (VOICES.some((voice) => voice.id === saved.id)) id = saved.id;
+  } catch {
+    id = "lot";
+  }
+  return VOICES.find((voice) => voice.id === id);
+}
+
+function chooseVoice(id) {
+  const voice = VOICES.find((item) => item.id === id);
+  if (!voice) return null;
+  fs.mkdirSync(ROOT, { recursive: true });
+  fs.writeFileSync(CHOICE, JSON.stringify({ id: voice.id }));
+  return voice;
+}
 
 const PIPER_URL = "https://github.com/rhasspy/piper/releases/download/2023.11.14-2/piper_windows_amd64.zip";
 const MODEL_URL =
@@ -57,7 +86,18 @@ async function ensureDutchVoice() {
   return { exe: PIPER_EXE, model: MODEL, config: CONFIG, speaker: SPEAKER, name: VOICE_NAME };
 }
 
-module.exports = { ensureDutchVoice, voiceFilesReady, PIPER_EXE, MODEL, CONFIG, SPEAKER, VOICE_NAME };
+module.exports = {
+  ensureDutchVoice,
+  voiceFilesReady,
+  PIPER_EXE,
+  MODEL,
+  CONFIG,
+  SPEAKER,
+  VOICE_NAME,
+  VOICES,
+  currentVoice,
+  chooseVoice
+};
 
 if (require.main === module) {
   ensureDutchVoice()

@@ -17,6 +17,13 @@ import EenLetter from "./games/EenLetter.jsx";
 import MemorySpel from "./games/MemorySpel.jsx";
 import Woordzoeker from "./games/Woordzoeker.jsx";
 
+const VOICE_PICKS = [
+  { id: "lot", name: "Lot" },
+  { id: "fenna", name: "Fenna" },
+  { id: "noor", name: "Noor" },
+  { id: "saar", name: "Saar" }
+];
+
 const AVATARS = {
   idle: publicUrl("/img/Margit%20Idle.png"),
   talk: publicUrl("/img/Margit%20Talking.png"),
@@ -94,6 +101,8 @@ export default function App() {
   const [spelled, setSpelled] = useState("");
   const [hearing, setHearing] = useState(false);
   const [muted, setMuted] = useState(false);
+  const [voices, setVoices] = useState(VOICE_PICKS);
+  const [voiceId, setVoiceId] = useState("lot");
   const [avatarMode, setAvatarMode] = useState("wave");
 
   function setMicNote() {
@@ -168,6 +177,36 @@ export default function App() {
   useEffect(() => {
     if (!isAppleMobile()) beginSessionRef.current();
   }, []);
+
+  useEffect(() => {
+    let gone = false;
+    fetch(apiUrl("/api/voices"))
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => {
+        if (gone || !data) return;
+        if (Array.isArray(data.voices) && data.voices.length) setVoices(data.voices);
+        if (data.current) setVoiceId(data.current);
+      })
+      .catch(() => {});
+    return () => {
+      gone = true;
+    };
+  }, []);
+
+  async function pickVoice(id) {
+    const previous = voiceId;
+    setVoiceId(id);
+    try {
+      const response = await fetch(apiUrl("/api/voice"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id })
+      });
+      if (!response.ok) setVoiceId(previous);
+    } catch {
+      setVoiceId(previous);
+    }
+  }
 
   function haltRecognition() {
     listenId.current += 1;
@@ -949,6 +988,17 @@ export default function App() {
                   <button type="button" className="stem" onClick={toggleMute} aria-pressed={muted}>
                     {muted ? "Stem aan" : "Stem uit"}
                   </button>
+                  {voices.map((voice) => (
+                    <button
+                      key={voice.id}
+                      type="button"
+                      className="voice-pick"
+                      aria-pressed={voiceId === voice.id}
+                      onClick={() => pickVoice(voice.id)}
+                    >
+                      {voice.name}
+                    </button>
+                  ))}
                 </div>
               </div>
               <MargitAvatar mode={avatarMode} />

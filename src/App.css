@@ -140,7 +140,12 @@ input {
   display: flex;
   align-items: center;
   justify-content: center;
+  flex-wrap: wrap;
+  gap: 6px;
   min-height: 40px;
+  position: relative;
+  z-index: 8;
+  pointer-events: auto;
 }
 
 .avatar {
@@ -257,6 +262,7 @@ input {
 
 .starter,
 .stem,
+.voice-pick,
 form button {
   appearance: none;
   min-height: 52px;
@@ -274,8 +280,21 @@ form button {
   clip-path: none;
 }
 
+.voice-pick {
+  min-height: 40px;
+  padding: 0.35em 0.75em;
+  border-radius: 14px;
+  font-size: 15px;
+}
+
+.voice-pick[aria-pressed="true"] {
+  background: #1b3f73;
+  color: #f6f1e8;
+}
+
 .starter:hover,
-.stem:hover {
+.stem:hover,
+.voice-pick:hover:not([aria-pressed="true"]) {
   background: #efe6d8;
 }
 
@@ -1134,10 +1153,15 @@ form button:disabled:hover {
   pointer-events: none;
 }
 
+.stage.spelling .voice,
+.stage.spelling .stem,
+.stage.spelling .voice-pick,
 .stage.choosing .voice,
 .stage.playing .voice,
 .stage.choosing .stem,
-.stage.playing .stem {
+.stage.playing .stem,
+.stage.choosing .voice-pick,
+.stage.playing .voice-pick {
   position: relative;
   z-index: 2;
   pointer-events: auto;

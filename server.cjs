@@ -14,8 +14,9 @@ const {
   PIPER_EXE,
   MODEL: VOICE_MODEL,
   CONFIG: VOICE_CONFIG,
-  SPEAKER,
-  VOICE_NAME
+  VOICES,
+  currentVoice,
+  chooseVoice
 } = require("./scripts/download-voice.cjs");
 
 const PAGES_ORIGIN = "https://tdiddy020105.github.io";
@@ -227,13 +228,18 @@ function runSpeaker(command, args, options, wav, voiceName) {
   });
 }
 
+function voiceLabel(voice) {
+  return `${voice.name} nl-NL`;
+}
+
 function speakWithPiper(text, wav) {
+  const voice = currentVoice();
   return runSpeaker(
     PIPER_EXE,
-    ["--model", VOICE_MODEL, "--config", VOICE_CONFIG, "--speaker", SPEAKER, "--output_file", wav, "--quiet"],
+    ["--model", VOICE_MODEL, "--config", VOICE_CONFIG, "--speaker", voice.speaker, "--output_file", wav, "--quiet"],
     { cwd: path.dirname(PIPER_EXE), input: Buffer.from(`${text}\n`, "utf8") },
     wav,
-    VOICE_NAME
+    voiceLabel(voice)
   );
 }
 
@@ -251,10 +257,11 @@ function speakWithFrank(text, wav) {
 
 function speakOnPc(text) {
   const piper = voiceFilesReady();
-  const hash = crypto.createHash("sha256").update(`${piper ? "mls5809" : "frank"}\n${text}`).digest("hex");
+  const voice = currentVoice();
+  const hash = crypto.createHash("sha256").update(`${piper ? voice.id : "frank"}\n${text}`).digest("hex");
   const wav = path.join(SPEAK_DIR, `${hash}.wav`);
   if (fs.existsSync(wav) && fs.statSync(wav).size > 44) {
-    return Promise.resolve({ file: wav, voice: piper ? VOICE_NAME : pcVoice });
+    return Promise.resolve({ file: wav, voice: piper ? voiceLabel(voice) : pcVoice });
   }
   if (speakJobs.has(hash)) return speakJobs.get(hash);
   fs.mkdirSync(SPEAK_DIR, { recursive: true });
@@ -337,6 +344,21 @@ app.post("/api/hear", express.raw({ type: () => true, limit: "12mb" }), async (r
     console.error("Hear error:", error.message);
     res.status(503).json({ error: "De herkenning op deze PC doet het nu niet." });
   }
+});
+
+app.get("/api/voices", (_req, res) => {
+  const current = currentVoice();
+  res.json({
+    current: current.id,
+    voices: VOICES.map((voice) => ({ id: voice.id, name: voice.name }))
+  });
+});
+
+app.post("/api/voice", (req, res) => {
+  const voice = chooseVoice(String(req.body?.id || ""));
+  if (!voice) return res.status(400).json({ error: "Onbekende stem." });
+  pcVoice = voiceLabel(voice);
+  res.json({ id: voice.id, name: voice.name });
 });
 
 app.post("/api/speak", async (req, res) => {
@@ -476,7 +498,7 @@ function listen() {
 
 ensureDutchVoice()
   .then(() => {
-    pcVoice = VOICE_NAME;
+    pcVoice = voiceLabel(currentVoice());
   })
   .catch((error) => {
     console.error("Netherlands Dutch voice is missing, Frank remains:", error.message);
